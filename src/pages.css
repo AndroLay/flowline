@@ -1,0 +1,892 @@
+/* Flowline — page compositions: the brief (landing) and the arena (gameplay),
+   plus the optional focus overlay. Shared primitives live in base.css. */
+
+/* --- brief ---------------------------------------------------------------- */
+
+.brief {
+  display: grid;
+  gap: 24px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.62fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 40px;
+  padding: 18px 0 6px;
+}
+
+.hero__copy {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.hero__copy h1 {
+  font-size: clamp(38px, 5.4vw, 76px);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+}
+
+.hero__copy h1 em {
+  font-style: normal;
+  color: var(--mint);
+}
+
+.hero__lede {
+  max-width: 44ch;
+  margin-top: 8px;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.hero__actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+/* The loop and the pillars are each one bordered container split by 1px internal
+   rules — not three floating cards. Dividers are inset shadows so they never
+   change the column widths. */
+.loop,
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.loop__step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 24px;
+}
+
+.loop__step + .loop__step,
+.pillar + .pillar {
+  box-shadow: inset 1px 0 0 var(--line);
+}
+
+.loop__n {
+  font-family: var(--mono);
+  font-size: 46px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--mint);
+}
+
+.loop__step h2,
+.pillar h2 {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.loop__step p,
+.pillar p {
+  max-width: 30ch;
+  margin-top: 7px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.loop__arrow {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.pillar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+  padding: 22px 24px;
+}
+
+.pillar__icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgb(110 227 207 / 0.45);
+  border-radius: 50%;
+  background: rgb(110 227 207 / 0.04);
+  flex: none;
+}
+
+.pillar__icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: var(--mint);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pillar__icon svg .is-solid {
+  fill: var(--mint);
+  stroke: none;
+}
+
+/* --- arena ---------------------------------------------------------------- */
+
+.arena {
+  display: grid;
+  grid-template-columns: 308px minmax(0, 1fr) 336px;
+  align-items: start;
+  gap: 16px;
+}
+
+.arena__center {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rail {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+
+.rail .panel {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+}
+
+.panel__kicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panel__kicker > b {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.panel__title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.rail p {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.panel__display {
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.03em;
+}
+
+.panel__display em {
+  font-style: normal;
+  color: var(--mint);
+}
+
+.panel__display--coral {
+  font-size: 30px;
+  color: var(--coral);
+}
+
+.panel__ask {
+  font-size: 16.5px;
+  font-weight: 550;
+  line-height: 1.42;
+}
+
+.critical__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.critical__head .tag {
+  border-radius: var(--r-sm);
+}
+
+/* Full-border deadline card: gold while the critical job still fits its window,
+   coral the moment the evaluation says it does not. */
+.deadline-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 7px 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--gold);
+  border-radius: var(--r-md);
+  background: rgb(224 167 47 / 0.09);
+}
+
+.deadline-box > .micro {
+  grid-column: 1 / -1;
+  color: var(--gold);
+}
+
+.deadline-box strong {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+}
+
+.deadline-box b {
+  justify-self: end;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--gold);
+}
+
+.deadline-box.is-late {
+  border-color: var(--coral);
+  background: rgb(234 100 85 / 0.1);
+}
+
+.deadline-box.is-late > .micro,
+.deadline-box.is-late b {
+  color: var(--coral);
+}
+
+.hint {
+  padding: 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-md);
+  background: rgb(255 255 255 / 0.02);
+  font-size: 12.5px;
+}
+
+/* --- auditor rail --------------------------------------------------------- */
+
+.steps {
+  display: grid;
+  gap: 8px;
+}
+
+/* Step card: a bordered numeral cell, the instruction, and a state circle that is
+   empty until the step has actually run. */
+.step {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgb(1 12 20 / 0.5);
+  text-align: left;
+  overflow: hidden;
+}
+
+.step:hover:not(:disabled) {
+  border-color: var(--line-2);
+  background: var(--panel-2);
+}
+
+.step__n {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  box-shadow: inset -1px 0 0 var(--line);
+  font-family: var(--mono);
+  font-size: 19px;
+  color: var(--mint);
+}
+
+.step__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 11px 13px;
+}
+
+.step__copy strong {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.step__copy small {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.step__tick {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  font-size: 10px;
+  color: var(--ink-3);
+  flex: none;
+}
+
+.step.is-done {
+  border-color: rgb(110 227 207 / 0.28);
+}
+
+.step.is-done .step__tick {
+  border-color: rgb(110 227 207 / 0.55);
+  color: var(--mint);
+}
+
+/* The finding is prose, not a card: the heading names the failure, the sentence
+   explains it. */
+.finding {
+  display: grid;
+  gap: 7px;
+  padding: 4px 0 0;
+}
+
+.finding p {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.evidence {
+  display: grid;
+  gap: 11px;
+  padding: 12px 13px;
+  border: 1px solid rgb(234 100 85 / 0.45);
+  border-radius: var(--r-md);
+  background: rgb(234 100 85 / 0.05);
+}
+
+.evidence header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.evidence header b {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--coral);
+}
+
+.evidence dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.evidence dl > div {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.evidence dt {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.evidence dd {
+  font-size: 15px;
+  font-weight: 550;
+  color: var(--ink);
+}
+
+.evidence .is-safe {
+  color: var(--mint);
+}
+
+.evidence .is-miss {
+  color: var(--coral);
+}
+
+.proposed {
+  display: grid;
+  gap: 7px;
+  padding: 12px 13px;
+  border: 1px solid rgb(110 227 207 / 0.4);
+  border-radius: var(--r-md);
+  background: rgb(110 227 207 / 0.05);
+}
+
+.proposed p {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.proposed strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* --- collapsed tool drawer ------------------------------------------------ */
+
+.tools {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+
+.tools summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tools summary::-webkit-details-marker {
+  display: none;
+}
+
+.tools summary > b {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mint);
+}
+
+.tools__row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 11px;
+}
+
+.tools__row button {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: rgb(1 12 20 / 0.5);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.tools__row button:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+
+.tools__note {
+  margin-top: 9px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.tools__log {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.tools__log li {
+  display: flex;
+  gap: 7px;
+}
+
+.tools__log b {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mint);
+  white-space: nowrap;
+}
+
+.tools__log .is-empty {
+  color: var(--ink-3);
+}
+
+/* --- decision gate -------------------------------------------------------- */
+
+/* The gate is deliberately the calmest panel in the rail: no alarm tint, no
+   urgency styling. It asks once, in plain words, and waits. */
+.gate {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  text-align: center;
+}
+
+.gate h2 {
+  font-size: 15.5px;
+  font-weight: 620;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.gate__copy {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.gate .btn {
+  justify-content: center;
+  gap: 14px;
+}
+
+.gate__reason {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+}
+
+.gate__reason textarea {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: rgb(1 12 20 / 0.7);
+  font-size: 12.5px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.gate__reason textarea::placeholder {
+  color: var(--ink-3);
+}
+
+.gate__aside {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.gate__receipt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+}
+
+.gate__note {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* --- ghost panel ---------------------------------------------------------- */
+
+.ghost {
+  display: grid;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: rgb(1 12 20 / 0.4);
+}
+
+.ghost__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ghost .tag {
+  border-radius: var(--r-sm);
+}
+
+/* The panel heading already says what this timeline is, so the timeline's own
+   caption would only repeat it. */
+.ghost .tl > .micro {
+  display: none;
+}
+
+.ghost__empty {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.ghost__empty b {
+  color: var(--ink-2);
+}
+
+.focus-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  justify-self: start;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(1 12 20 / 0.55);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.focus-open:hover {
+  color: var(--mint);
+  border-color: rgb(110 227 207 / 0.4);
+}
+
+/* --- focus overlay -------------------------------------------------------- */
+
+.focus-view {
+  width: min(1000px, 100%);
+}
+
+.focus-view__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.focus-view__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 14px;
+}
+
+.focus-view__viewport {
+  position: relative;
+  min-height: 300px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: #030f1a;
+  overflow: hidden;
+}
+
+.focus-view__canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+}
+
+.focus-view__overlay {
+  position: absolute;
+  inset: auto 12px 12px;
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: rgb(1 12 20 / 0.88);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.focus-view__overlay b {
+  color: var(--coral);
+}
+
+.focus-view__overlay small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.focus-view__stamp {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.focus-view__stamp b {
+  padding: 3px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: rgb(1 12 20 / 0.8);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.focus-view__inspector {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: rgb(1 12 20 / 0.5);
+}
+
+.focus-view__inspector > div {
+  display: grid;
+  gap: 2px;
+}
+
+.focus-view__inspector strong {
+  font-size: 13px;
+}
+
+.focus-view__inspector small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.focus-view__path {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.focus-view__finding {
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-3);
+  border-radius: var(--r-md);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.focus-view__finding.is-critical {
+  border-left-color: var(--coral);
+}
+
+.focus-view__finding.is-watch {
+  border-left-color: var(--gold);
+}
+
+.focus-view__finding.is-clear {
+  border-left-color: var(--mint);
+}
+
+.focus-view__controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.focus-view__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.focus-view__group > .micro {
+  width: 100%;
+}
+
+.focus-view__group button {
+  display: grid;
+  gap: 1px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: rgb(1 12 20 / 0.55);
+  text-align: left;
+}
+
+.focus-view__group button b {
+  font-size: 11.5px;
+  font-weight: 570;
+}
+
+.focus-view__group button small {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+}
+
+.focus-view__group button.is-on {
+  border-color: var(--mint);
+  background: rgb(110 227 207 / 0.1);
+}
+
+.focus-view__semantic {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+/* --- responsive ----------------------------------------------------------- */
+
+@media (max-width: 1200px) {
+  .arena {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .rail--objective {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .loop,
+  .pillars {
+    grid-template-columns: 1fr;
+  }
+
+  .loop__arrow {
+    display: none;
+  }
+
+  .arena {
+    grid-template-columns: 1fr;
+  }
+
+  .rail--objective {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-view__body,
+  .focus-view__controls {
+    grid-template-columns: 1fr;
+  }
+}
