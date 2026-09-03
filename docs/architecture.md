@@ -7,7 +7,9 @@ Flowline is a static, local-first React application. It has no backend, database
 The package is self-contained on purpose: it builds and tests on its own, and produces a
 static bundle with a relative `base` that runs from any subpath, with no dependency on a
 sibling project, a shared library, or any build step outside its own `package.json`.
-Deployment is a separate, unfinished matter: as of 2026-09-03 no host serves this build.
+That relative `base` is what makes the deployment trivial: the same five files are served at
+`https://androlay.github.io/flowline/` from the `gh-pages` branch root, byte for byte identical to a
+local `dist/`, with no rewrite step and nothing running server-side.
 
 ## Layers
 
@@ -188,12 +190,12 @@ what the timeline already states. Nothing is playable only in 3D.
 The internal performance budget is measured separately from correctness. The current
 headless Chromium run — ANGLE/SwiftShader, no GPU, 1440 × 900 desktop and 390 × 844
 mobile — clears ten of its eleven budgets and still does **not** close the performance
-gate. The disposable floor becomes ready 264 ms after it is asked for on desktop and
-174 ms on mobile, inside the 1000 ms budget, and opening it blocks the main thread in two
-tasks whose longest is 114 ms on desktop and 80 ms on mobile, inside the budget of no
+gate. The disposable floor becomes ready 270 ms after it is asked for on desktop and
+262 ms on mobile, inside the 1000 ms budget, and opening it blocks the main thread in two
+tasks whose longest is 123 ms on desktop and 116 ms on mobile, inside the budget of no
 single task over 200 ms. The failing budget is frame cadence while picks are being
-clicked: against a median of at least 55 FPS, the desktop sample reads 20.04 median FPS
-with a 150 ms worst frame, while the 390 px sample reads 59.88 FPS and is still not a
+clicked: against a median of at least 55 FPS, the desktop sample reads 29.94 median FPS
+with a 116.7 ms worst frame, while the 390 px sample reads 59.88 FPS and is still not a
 phone result. With the floor open and idle both viewports read 59.88 FPS, but that figure
 measures a demand-driven loop that is drawing nothing — requestAnimationFrame cadence,
 not throughput. All of these are environment-specific software-rendering measurements and
@@ -204,11 +206,11 @@ is run-to-run variance on a software rasteriser — **not a code fix and not a r
 Nothing in the renderer changed across the runs; the two source edits behind them were one
 overlay heading sentence and the tool annotations. The floor-open task budget failed on the
 2026-09-02 five-window sample, whose long tasks ran 373–564 ms on every open, and passes
-here; the picks cadence has now read 30.03, then 29.94, then 20.04 median FPS twice — worst
-frame 116.7 ms and then 150 ms — across four samples of the same surface, and failed its
-budget on all four. The 2026-09-02 sampler also discarded intervals above 100 ms, so the
-samples are not directly comparable to begin with. Four software samples that answer three
-different ways cannot settle this gate, so it stays open and real-hardware
+here; the picks cadence has now read 30.03, then 29.94, then 20.04 twice, and 29.94 again —
+worst frame 116.7 ms, then 150 ms, then 116.7 ms — across five samples of the same surface,
+and failed its budget on all five. The 2026-09-02 sampler also discarded intervals above
+100 ms, so the samples are not directly comparable to begin with. Five software samples that
+answer three different ways cannot settle this gate, so it stays open and real-hardware
 behaviour stays unmeasured. A real-device run is required before making a final Adopt
 decision for the 3D layer; if the gate fails, the safe release choice is to simplify or
 defer 3D while keeping the 2.5D game playable.

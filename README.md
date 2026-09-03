@@ -14,6 +14,10 @@ and stage a fix; the revision only ever moves when a human clicks confirm.
 
 > A schedule can look efficient until the floor changes.
 
+**Play it: <https://androlay.github.io/flowline/>** — the built bundle on GitHub Pages, no account and
+no setup. The agent surface needs a browser that implements WebMCP; without one you get the game and
+the human interface, which is the whole game minus the auditor.
+
 ![The 2.5D arena in the planning phase](./docs/images/arena-planning.png)
 
 *A capture of the built application at 1440 × 900. The board is synthetic fixture data, and the
@@ -23,8 +27,9 @@ app labels it as such.*
 
 ## What works
 
-Everything below has been run against the current build on a developer machine. No part of it
-depends on a server, an account or a network call.
+Everything below has been run against the current build: on a developer machine, and again against
+the hosted URL above, which serves the same five files byte for byte. No part of it depends on a
+server, an account or a network call — the page does all of it in the tab.
 
 - the whole loop — setup → planning → confirmation → disruption → recovery → exact undo;
 - a deterministic two-station simulator, exhaustive over all 24 job orders;
@@ -40,16 +45,18 @@ depends on a server, an account or a network call.
 
 ## What is not claimed
 
-- **A shipped WebMCP client has never driven this page.** A model has, in three separate sessions
-  on a developer machine: given plain-language turns that named no tool, `claude-opus-5` chose 27
-  calls across seven of the eight tools Chromium's own WebMCP registry held for the page. It read
-  the board, named the bottleneck, stress-tested running orders it invented itself, staged a plan
-  and left it pending for a human — and in one session read the disrupted board and deliberately
-  wrote nothing. The page's own guards refused it four times; twice it diagnosed the refusal and
-  satisfied it unaided. Every session needed an experimental Chromium flag and a local stdio
-  bridge, and all three were one machine, one model and prompts the author wrote, so they say the
-  surface is legible to a model; they do not say a browser ships this surface today, or that the
-  path is stable. Those transcripts are kept privately with the other measurement runs.
+- **A shipped WebMCP client has never driven this page.** A model has, in six separate sessions:
+  three on a developer machine and three against the hosted URL. Given plain-language turns that
+  named no tool, `claude-opus-5` chose 27 calls locally across seven of the eight tools Chromium's
+  own WebMCP registry held for the page, and 33 more on the hosted build. It read the board, named
+  the bottleneck, stress-tested running orders it invented itself, staged a plan and left it pending
+  for a human — and in one session read the disrupted board and deliberately wrote nothing. The
+  page's own guards refused it seven times across the six sessions; twice it diagnosed the refusal
+  and satisfied it unaided. Every session needed an experimental Chromium flag and a local stdio
+  bridge, all six were one machine, one model and prompts the author wrote, and each hosted session
+  stopped at its own spending cap with the trajectory logged and no closing answer written. So they
+  say the surface is legible to a model; they do not say a browser ships this surface today, or that
+  the path is stable. Those transcripts are kept privately with the other measurement runs.
 - **Performance on real hardware, in either direction.** Every frame figure ever measured for
   this project came from a headless software rasteriser, and opening the 3D floor costs a long
   task on one.
@@ -69,13 +76,14 @@ pnpm build        # tsc -b, then a production build into dist/
 pnpm preview      # serves dist/ on Vite's preview port
 ```
 
-`.github/workflows/pages.yml` declares those same gates on a clean Node 22 runner and a Pages
-deployment of `dist/`. It is the intended path rather than a demonstrated one — the gates above
-were run locally, and the workflow has never executed them. Both attempts, one per push, ended in
-four seconds with no runner assigned: an account-level Actions restriction refused the job before
-it started, so the failure says nothing about the workflow and nothing has been deployed by it.
-Until that clears, `pnpm build && pnpm preview` is the honest way to see the built bundle. The
-bundle uses a relative `base`, so it resolves its own assets from whatever subpath it is served on.
+The bundle uses a relative `base`, so it resolves its own assets from whatever subpath it is served
+on — which is how <https://androlay.github.io/flowline/> works. That deployment was made by hand: the
+built `dist/` was pushed to the `gh-pages` branch root with a `.nojekyll` marker, and Pages serves it
+with its legacy builder. `.github/workflows/pages.yml` declares the same gates on a clean Node 22
+runner and would deploy `dist/` on push; it has never executed. Both attempts, one per push, ended in
+four seconds with no runner assigned — an account-level Actions restriction refused the job before it
+started — so the failure says nothing about the workflow, and nothing on the live site was produced by
+it. Locally, `pnpm build && pnpm preview` gives you the same bundle.
 
 ## Game loop
 
@@ -257,17 +265,18 @@ what has been shown:
   the game can be played back afterwards.
 - **Registering eight tools is not a model choosing between them.** The eval harness removes the
   model on purpose so it can measure the surface instead — a different claim, not a substitute
-  for one. Three model sessions exist alongside it and are described under *What is not claimed*;
-  three sessions on one machine are a demonstration, not a measurement.
+  for one. Six model sessions exist alongside it and are described under *What is not claimed*;
+  six sessions on one machine, three of them pointed at the hosted build, are a demonstration, not a
+  measurement.
 - **Every frame figure came from a headless software rasteriser.** It bounds nothing about real
   hardware in either direction.
 
 The measurement runs behind the numbers in this README — a scripted client driving the page over
-the DevTools protocol, the three model sessions, a WebGL-denied probe, per-viewport frame timings, a
-hosting dry run — are kept privately with the scripts that produced them and a hash apiece. They
-are a record of how this was built rather than part of the game, so they are not in this
-repository. Where a figure appears above, the sentence around it says what was measured and what
-the measurement cannot support.
+the DevTools protocol, the six model sessions, a WebGL-denied probe, per-viewport frame timings, and
+the fetch that hashed the hosted bundle against the local build — are kept privately with the scripts
+that produced them and a hash apiece. They are a record of how this was built rather than part of the
+game, so they are not in this repository. Where a figure appears above, the sentence around it says
+what was measured and what the measurement cannot support.
 
 ## License
 
