@@ -5,10 +5,10 @@
 [![Vite](https://img.shields.io/badge/Vite-7.3-646cff)](https://vite.dev)
 [![three.js](https://img.shields.io/badge/three.js-0.180%20lazy-333333)](https://threejs.org)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A5%2022.6-5fa04e)](https://nodejs.org)
-[![WebMCP tools](https://img.shields.io/badge/WebMCP%20tools-6-7c5cff)](#webmcp-surface)
+[![WebMCP tools](https://img.shields.io/badge/WebMCP%20tools-8-7c5cff)](#webmcp-surface)
 [![License](https://img.shields.io/badge/License-MIT-2f855a)](./LICENSE)
 
-Flowline is a **deterministic operations game with a page-aware agent surface**. Six WebMCP
+Flowline is a **deterministic operations game with a page-aware agent surface**. Eight WebMCP
 tools let an assistant read the live board, name the bottleneck, stress-test the running order
 and stage a fix; the revision only ever moves when a human clicks confirm.
 
@@ -28,9 +28,9 @@ depends on a server, an account or a network call.
 
 - the whole loop — setup → planning → confirmation → disruption → recovery → exact undo;
 - a deterministic two-station simulator, exhaustive over all 24 job orders;
-- six page-state and revision-aware tools, with stale, invalid, duplicate, wrong-phase and
+- eight page-state and revision-aware tools, with stale, invalid, duplicate, wrong-phase and
   recovery guards;
-- a human confirmation boundary no tool can cross. Over one continuous 38-step session, 28 tool
+- a human confirmation boundary no tool can cross. Over one continuous 40-step session, 28 tool
   calls moved the revision zero times, while the revision itself went 2 → 6 on human clicks
   alone;
 - an eval harness that scores the tool surface rather than a model — five tasks, eight
@@ -40,8 +40,16 @@ depends on a server, an account or a network call.
 
 ## What is not claimed
 
-- **A model has never driven this page.** Nothing here shows a real client discovering these
-  tools, or a model choosing one of them from a sentence.
+- **A shipped WebMCP client has never driven this page.** A model has, in three separate sessions
+  on a developer machine: given plain-language turns that named no tool, `claude-opus-5` chose 27
+  calls across seven of the eight tools Chromium's own WebMCP registry held for the page. It read
+  the board, named the bottleneck, stress-tested running orders it invented itself, staged a plan
+  and left it pending for a human — and in one session read the disrupted board and deliberately
+  wrote nothing. The page's own guards refused it four times; twice it diagnosed the refusal and
+  satisfied it unaided. Every session needed an experimental Chromium flag and a local stdio
+  bridge, and all three were one machine, one model and prompts the author wrote, so they say the
+  surface is legible to a model; they do not say a browser ships this surface today, or that the
+  path is stable. Those transcripts are kept privately with the other measurement runs.
 - **Performance on real hardware, in either direction.** Every frame figure ever measured for
   this project came from a headless software rasteriser, and opening the 3D floor costs a long
   task on one.
@@ -56,14 +64,16 @@ pnpm install
 
 pnpm dev          # http://127.0.0.1:4178/
 pnpm typecheck    # tsc -b, no emit
-pnpm test         # 30 cases across four modules, and prints the eval scorecard
+pnpm test         # 41 cases across four modules, and prints the eval scorecard
 pnpm build        # tsc -b, then a production build into dist/
 pnpm preview      # serves dist/ on Vite's preview port
 ```
 
-`.github/workflows/pages.yml` runs those same gates on a clean Node 22 runner and publishes
-`dist/` to GitHub Pages. The bundle uses a relative `base`, so it resolves its own assets from
-whatever subpath it is served on.
+`.github/workflows/pages.yml` declares those same gates on a clean Node 22 runner and a Pages
+deployment of `dist/`. It is the intended path rather than a demonstrated one — the gates above
+were run locally, and the workflow has never executed them: its single attempt failed three
+seconds in, with no runner assigned, so nothing has been deployed by it. The bundle uses a relative
+`base`, so it resolves its own assets from whatever subpath it is served on.
 
 ## Game loop
 
@@ -78,9 +88,14 @@ whatever subpath it is served on.
 8. Read the outcome, and optionally prepare an exact rollback.
 
 The learning objective is narrow and explicit: explain why an order that is on time in the
-normal shift fails after a capacity disruption, then name one trade-off in a more robust order.
-The game does not assess that answer — it requires a written reason at the confirmation gate
-and keeps it on the receipt, and no learner session has been recorded.
+normal shift fails after a capacity disruption, then say where the recovery moved the slack.
+In this fixture that is the whole lesson, and it is not "robustness costs throughput" — the
+robust order ties the default on every reported metric in the normal shift and beats it on
+every one under the disruption; what changes is which job ends exactly on its deadline. The
+four measured outcomes are tabulated in
+[`docs/game-design.md`](./docs/game-design.md#measured-outcome-of-the-fixture).
+The game does not assess the learner's answer — it requires a written reason at the
+confirmation gate and keeps it on the receipt, and no learner session has been recorded.
 
 | a proposal an agent staged, still pending | the shift after the bay loses a berth |
 | --- | --- |
@@ -106,7 +121,7 @@ that click. The renderer keeps one scene, procedural geometry, a capped pixel ra
 demand-driven frame loop, and disposal on teardown. Every word on the floor is DOM text anchored
 to a projected world point, which is why label collisions are measured rather than eyeballed.
 When a WebGL context cannot be created the floor degrades to a labelled text floor listing every
-stand, both berths, the deadline and the shift clock — the plan stays playable in 2D, and the six
+stand, both berths, the deadline and the shift clock — the plan stays playable in 2D, and the
 tools keep answering. `?flowline-capture=1` exists only for local screenshot capture.
 
 The arena is also the mobile layout, at 390 × 844:
@@ -118,15 +133,23 @@ The arena is also the mobile layout, at 390 × 844:
 | Tool | Role | State effect |
 | --- | --- | --- |
 | `inspect_board` | read the active schedule, phase, revision, and the receipt of the last confirmed plan | focus only |
+| `list_shifts` | read the campaign: each shift's objective, disruption, job count and grade so far | focus only |
 | `find_bottleneck` | audit the active condition | stores a visible audit |
 | `simulate_disruption` | compare normal against one-berth-offline | stores a visible audit |
 | `compare_plans` | weigh a proposed order without committing it | files a candidate reading beside the board's own audit |
+| `review_shift` | read the result card of a closed shift: grade, objectives met, closing order, and how the work split between tools and human confirmations | focus only |
 | `stage_schedule` | prepare a schedule proposal | pending proposal only |
 | `undo_schedule` | prepare an exact rollback from the receipt id `inspect_board` reports | pending proposal only |
 
-All six come from one exported `TOOL_SPECS` list in `src/tools/webmcp.ts`, so the schema a client
+All eight come from one exported `TOOL_SPECS` list in `src/tools/webmcp.ts`, so the schema a client
 reads and the handler that runs cannot drift apart. None of them can confirm anything: committing
 is a human-only control that is deliberately not registered as a tool.
+
+None of the eight advertises `readOnlyHint` either. All eight register
+`annotations: { readOnlyHint: false, destructiveHint: false }`, because all eight write something
+visible on the page and a host may use a read-only hint to skip its confirmation prompt. The six
+that never touch the schedule or the revision carry that narrower claim internally, as
+`boardReadOnly` on the spec, asserted in `tests/tools.test.mts` and never sent to a host.
 
 Every value a write tool requires can be learned from a read. That is asserted on values rather
 than key names by the eval harness in `tests/evals.test.mts`, and it is asserted because it was
@@ -148,7 +171,7 @@ flowline/
 │   ├── App.tsx                 # phases: boot → brief → arena → focus
 │   ├── domain/model.ts         # the simulator, the guards, every state transition
 │   ├── data/fixtures.ts        # four fictional jobs, two stations, one deadline
-│   ├── tools/webmcp.ts         # TOOL_SPECS — the six tools and their registration
+│   ├── tools/webmcp.ts         # TOOL_SPECS — the eight tools and their registration
 │   ├── visual/
 │   │   ├── scene-model.ts      # ScheduleEvaluation → placements, per shift slot
 │   │   └── flowline-3d.ts      # three.js renderer, only ever reached by import()
@@ -172,7 +195,7 @@ flowline/
 | UI | React 19.2.8. No router, no state library, no component library |
 | Build | Vite 7.3.6 and TypeScript 5.9.3 strict; `tsc -b` runs before every build |
 | 3D | three.js 0.180.0, dynamically imported, procedural geometry only |
-| Agent surface | WebMCP over `document.modelContext`, six tools from one `TOOL_SPECS` list |
+| Agent surface | WebMCP over `document.modelContext`, eight tools from one `TOOL_SPECS` list |
 | Tests | `node --test` with `--experimental-strip-types`; no test-framework dependency |
 | Runtime | Node ≥ 22.6, pnpm, static output |
 | Data | Local fixtures. No backend, no network calls, no storage, no telemetry |
@@ -205,18 +228,19 @@ what has been shown:
 - The simulator is a **deterministic recomputation, not a replay.** The same order always
   recomputes to the same board, but the app records and exports nothing, so no session played in
   the game can be played back afterwards.
-- **Registering six tools is not a model choosing between them.** The eval harness removes the
+- **Registering eight tools is not a model choosing between them.** The eval harness removes the
   model on purpose so it can measure the surface instead — a different claim, not a substitute
-  for one.
+  for one. Three model sessions exist alongside it and are described under *What is not claimed*;
+  three sessions on one machine are a demonstration, not a measurement.
 - **Every frame figure came from a headless software rasteriser.** It bounds nothing about real
   hardware in either direction.
 
 The measurement runs behind the numbers in this README — a scripted client driving the page over
-the DevTools protocol, a WebGL-denied probe, per-viewport frame timings, a hosting dry run — are
-kept privately with the scripts that produced them and a hash apiece. They are a record of how
-this was built rather than part of the game, so they are not in this repository. Where a figure
-appears above, the sentence around it says what was measured and what the measurement cannot
-support.
+the DevTools protocol, the three model sessions, a WebGL-denied probe, per-viewport frame timings, a
+hosting dry run — are kept privately with the scripts that produced them and a hash apiece. They
+are a record of how this was built rather than part of the game, so they are not in this
+repository. Where a figure appears above, the sentence around it says what was measured and what
+the measurement cannot support.
 
 ## License
 

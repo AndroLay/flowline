@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scenario } from "../src/data/fixtures.ts";
+import { scenario, shifts } from "../src/data/fixtures.ts";
 import {
   applyDisruption,
   auditSchedule,
+  closeShift,
   confirmPending,
   createInitialState,
+  criticalJob,
+  dispatchBerths,
   endSlot,
   enterArena,
   evaluateSchedule,
@@ -13,14 +16,26 @@ import {
   prepareUndo,
   reorderJob,
   recommendSchedule,
+  resetRound,
+  shiftOptions,
   slotWindow,
   stageSchedule,
+  startShift,
   startSlot,
   validateSchedule,
   type GameState,
   type Schedule,
+  type Scenario,
+  type ScheduleEvaluation,
   type Transition,
 } from "../src/domain/model.ts";
+
+/** The run of one job in one evaluation, which is what most assertions here are about. */
+function runOf(evaluation: ScheduleEvaluation, jobId: string) {
+  const run = evaluation.jobs.find((job) => job.jobId === jobId);
+  assert.ok(run, `evaluation has no run for ${jobId}`);
+  return run;
+}
 
 function stateOf<T>(transition: Transition<T>): T {
   assert.equal(transition.ok, true, transition.ok ? undefined : transition.error.message);
@@ -263,4 +278,192 @@ test("human-gated schedule lifecycle supports stale protection, disruption, reco
   assert.deepEqual(state.schedule, scenario.defaultSchedule);
   assert.equal(state.activeReceipt?.action, "undone");
   assert.equal(state.receipts.length, 3);
+});
+
+/**
+ * Three shifts have to be three lessons. Each one is a plan that works on a floor which never
+ * changes, a disruption that takes that away, and a way out a player can reach — if any of
+ * those three is missing the shift is either unwinnable or not worth playing.
+ */
+test("every shift is solvable under its own disruption, and its default order is not the answer", () => {
+  for (const shift of shifts) {
+    const critical = criticalJob(shift);
+    const calm = evaluateSchedule(shift, shift.defaultSchedule, shiftOptions(shift, false));
+    const shocked = evaluateSchedule(shift, shift.defaultSchedule, shiftOptions(shift, true));
+    const robust = evaluateSchedule(shift, shift.robustSchedule, shiftOptions(shift, true));
+
+    assert.equal(runOf(calm, critical.id).onTime, true, `${shift.id}: the default order has to hold before the shock`);
+    assert.equal(calm.metrics.tardyJobs, 0, `${shift.id}: the default order has to be clean before the shock`);
+
+    assert.ok(shocked.metrics.score < calm.metrics.score, `${shift.id}: the disruption has to cost the default order something`);
+    assert.ok(shocked.metrics.tardyJobs > 0, `${shift.id}: the default order has to break under the shock`);
+
+    assert.equal(runOf(robust, critical.id).verdict, "on-time", `${shift.id}: the way out has to keep margin, not land on the deadline`);
+    assert.equal(robust.metrics.tardyJobs, 0, `${shift.id}: the way out has to land every job`);
+    assert.ok(robust.metrics.score > shocked.metrics.score, `${shift.id}: replanning has to pay`);
+  }
+});
+
+/**
+ * The campaign is not one shift three times. Shift 1 is a full floor losing a berth, shift 2
+ * adds an intake the plan has to wait for, and shift 3's shock is a late arrival rather than
+ * lost capacity — so the guide, the finding and the card all have to read for either kind.
+ */
+test("the campaign covers both kinds of shock and both kinds of intake", () => {
+  assert.deepEqual(shifts.map((shift) => shift.order), [1, 2, 3]);
+  assert.equal(new Set(shifts.map((shift) => shift.id)).size, shifts.length);
+
+  const shape = shifts.map((shift) => ({
+    id: shift.id,
+    staggered: shift.jobs.some((job) => job.releaseAt > 0),
+    berthsLost: dispatchBerths(shift) - shift.disruption.dispatchParallelism,
+    lateArrivals: (shift.disruption.releaseDelays ?? []).length,
+  }));
+  for (const entry of shape) {
+    assert.ok(entry.berthsLost > 0 || entry.lateArrivals > 0, `${entry.id}: a disruption has to take something away`);
+    assert.ok(entry.berthsLost >= 0, `${entry.id}: a shock cannot add berths`);
+  }
+  assert.ok(shape.some((entry) => entry.berthsLost > 0 && entry.lateArrivals === 0), "one shift has to lose capacity");
+  assert.ok(shape.some((entry) => entry.lateArrivals > 0 && entry.berthsLost === 0), "one shift has to be shocked by a late arrival");
+  assert.ok(shape.some((entry) => !entry.staggered), "one shift has to start with the whole floor already in intake");
+  assert.ok(shape.filter((entry) => entry.staggered).length >= 2, "the queue has to be part of more than one shift");
+});
+
+/**
+ * The intake queue, checked on every order of every shift under both conditions. Two costs come
+ * out of it and they are not the same cost: a job that arrived while the crew was busy waited in
+ * intake, and a crew with nothing to prep was starved. Confusing the two would let a plan blame
+ * the floor for a queue it created, and the result card reports them on separate lines.
+ */
+test("prep never starts before a job arrives, and the queue's two costs stay apart", () => {
+  for (const shift of shifts) {
+    for (const order of permutations([...shift.defaultSchedule])) {
+      for (const shocked of [false, true]) {
+        const options = shiftOptions(shift, shocked);
+        const delays = new Map((options.releaseDelays ?? []).map((delay) => [delay.jobId, delay.slots]));
+        const evaluation = evaluateSchedule(shift, order, options);
+        const where = `${shift.id} ${order.join(",")} shocked=${shocked}`;
+        let starvedFromRuns = 0;
+        let prepCursor = 0;
+        for (const jobId of order) {
+          const run = runOf(evaluation, jobId);
+          const releaseAt = shift.jobs.find((job) => job.id === jobId)!.releaseAt + (delays.get(jobId) ?? 0);
+          assert.equal(run.releaseAt, releaseAt, `${where}: ${jobId} reports the arrival it was evaluated with`);
+          assert.ok(run.prepStart >= releaseAt, `${where}: ${jobId} was prepped before it arrived`);
+          assert.equal(run.intakeWait, Math.max(0, prepCursor - releaseAt), `${where}: ${jobId}'s intake wait is the crew being busy`);
+          starvedFromRuns += Math.max(0, releaseAt - prepCursor);
+          prepCursor = run.prepEnd;
+        }
+        assert.equal(evaluation.metrics.prepStarved, starvedFromRuns, `${where}: starved slots are the crew waiting, not the queue`);
+        assert.equal(
+          evaluation.metrics.totalIntakeWait,
+          order.reduce((total, jobId) => total + runOf(evaluation, jobId).intakeWait, 0),
+          `${where}: the intake total is the sum of its runs`,
+        );
+        assert.ok(evaluation.metrics.prepStarved === 0 || evaluation.metrics.totalIntakeWait >= 0, `${where}: both costs are reported`);
+      }
+    }
+  }
+});
+
+/**
+ * One shock, one description of it. `shiftOptions` is the only place that turns a shift and a
+ * flag into evaluation conditions, because the bug it replaced was a hand-written copy that
+ * hardcoded two berths and dropped the late arrivals — so a confirmed receipt on shift 3 was
+ * judged on a floor the player was not standing on.
+ */
+test("a shock is described in one place, and it carries both of its halves", () => {
+  for (const shift of shifts) {
+    const calm = shiftOptions(shift, false);
+    assert.equal(calm.dispatchParallelism, dispatchBerths(shift), `${shift.id}: an unshocked floor runs every berth`);
+    assert.equal(calm.releaseDelays, undefined, `${shift.id}: an unshocked floor has no late arrivals`);
+
+    const shocked = shiftOptions(shift, true);
+    assert.equal(shocked.dispatchParallelism, shift.disruption.dispatchParallelism, `${shift.id}: the shock owns the berth count`);
+    assert.deepEqual(shocked.releaseDelays, shift.disruption.releaseDelays, `${shift.id}: the shock owns the late arrivals`);
+    assert.deepEqual(
+      evaluateSchedule(shift, shift.defaultSchedule, shocked).metrics,
+      evaluateSchedule(shift, shift.defaultSchedule, {
+        dispatchParallelism: shift.disruption.dispatchParallelism,
+        releaseDelays: shift.disruption.releaseDelays,
+      }).metrics,
+      `${shift.id}: the helper and the disruption describe the same floor`,
+    );
+  }
+});
+
+/**
+ * The board's ruler is drawn from the makespan, so the makespan has to be the last slot any job
+ * occupies — otherwise a bar lands in a column the strip never drew. On two of the three shifts a
+ * bad order finishes after the shift is over, which is why the strip cannot assume the horizon.
+ */
+test("the makespan is the last slot the plan actually occupies, horizon or not", () => {
+  let sawOverrun = 0;
+  for (const shift of shifts) {
+    for (const order of permutations([...shift.defaultSchedule])) {
+      for (const shocked of [false, true]) {
+        const evaluation = evaluateSchedule(shift, order, shiftOptions(shift, shocked));
+        const last = Math.max(...evaluation.jobs.map((run) => Math.max(run.prepEnd, run.dispatchEnd)));
+        assert.equal(evaluation.metrics.makespan, last, `${shift.id} ${order.join(",")}: the makespan has to cover every bar`);
+        if (last > shift.horizon) sawOverrun += 1;
+      }
+    }
+  }
+  assert.ok(sawOverrun > 0, "a plan that runs past its shift has to be possible, or the ruler is over-engineered");
+});
+
+/**
+ * The whole shift, once, the way a player runs it: commit the plan the floor came with, meet the
+ * shock, replan, close. Two things are checked that nothing else can check — that a receipt
+ * confirmed after the shock is judged on the shocked floor (it was not: the conditions were
+ * hardcoded, so shift 3's late arrival never reached a confirmed receipt), and that a closed
+ * board is inert.
+ */
+test("a shift closes into a card that agrees with the board, and a closed board stops moving", () => {
+  const shift = shifts.find((entry) => entry.id === "night-handover")!;
+  let state: GameState = createInitialState(shift);
+  state = stateOf(enterArena(state));
+  state = stateOf(stageSchedule(state, shift.defaultSchedule, "Open on the order the floor came with.", state.revision));
+  state = stateOf(confirmPending(state));
+  state = stateOf(applyDisruption(state));
+  assert.equal(state.shockApplied, true);
+
+  state = stateOf(stageSchedule(state, shift.robustSchedule, "Vault arrives late, so prep it after Manifest.", state.revision));
+  state = stateOf(confirmPending(state));
+  const onTheFloor = evaluateSchedule(shift, shift.robustSchedule, shiftOptions(shift, true));
+  assert.deepEqual(state.activeReceipt?.metrics.metrics, onTheFloor.metrics, "a receipt is judged on the floor it was confirmed on");
+  assert.ok(onTheFloor.metrics.totalIntakeWait > 0, "shift 3's late arrival has to show up in the receipt it was confirmed under");
+
+  const closed = stateOf(closeShift(state, []));
+  assert.equal(closed.phase, "closed");
+  const card = closed.resultCard!;
+  assert.deepEqual(card.evaluation.metrics, onTheFloor.metrics, "the card reports the board that was closed");
+  assert.deepEqual(card.finalSchedule, shift.robustSchedule);
+  assert.equal(card.scenarioId, shift.id);
+  assert.equal(card.shiftOrder, shift.order);
+  assert.equal(card.score, onTheFloor.metrics.score);
+  assert.equal(card.objectivesGraded, card.objectives.filter((objective) => objective.graded).length);
+  assert.equal(card.objectivesMet, card.objectives.filter((objective) => objective.graded && objective.met).length);
+  assert.equal(card.activity.humanConfirmations, closed.receipts.length);
+  assert.equal(card.activity.toolCalls, 0, "no tool ran in this shift, and the card must not invent one");
+  assert.ok(card.summary.length >= 5, "the card has to be readable as text");
+  assert.deepEqual(closed.results.map((result) => result.scenarioId), [shift.id]);
+
+  // Every mutating transition refuses on a closed board, so the card cannot be contradicted.
+  for (const [name, transition] of [
+    ["reorderJob", reorderJob(closed, shift.robustSchedule[0]!, 3)],
+    ["stageSchedule", stageSchedule(closed, shift.defaultSchedule, "One more idea.", closed.revision)],
+    ["applyDisruption", applyDisruption(closed)],
+    ["closeShift", closeShift(closed, [])],
+  ] as const) {
+    assert.equal(transition.ok, false, `${name} has to refuse on a closed board`);
+  }
+
+  // Moving on keeps the cards; replaying the same shift keeps them too.
+  const next = stateOf(startShift(closed, shifts[0]!));
+  assert.equal(next.scenario.id, shifts[0]!.id);
+  assert.equal(next.phase, "setup");
+  assert.equal(next.resultCard, undefined, "a fresh shift starts without a card of its own");
+  assert.deepEqual(next.results.map((result) => result.scenarioId), [shift.id], "the campaign remembers what was closed");
+  assert.deepEqual(resetRound(closed).results.map((result) => result.scenarioId), [shift.id], "a replay keeps the cards already earned");
 });

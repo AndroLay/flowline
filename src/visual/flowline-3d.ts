@@ -1,4 +1,36 @@
-import * as THREE from "three";
+import {
+  AdditiveBlending,
+  AmbientLight,
+  BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  CircleGeometry,
+  Color,
+  CylinderGeometry,
+  DirectionalLight,
+  Fog,
+  GridHelper,
+  Group,
+  InstancedMesh,
+  LinearSRGBColorSpace,
+  MathUtils,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  NormalBlending,
+  PerspectiveCamera,
+  PlaneGeometry,
+  Quaternion,
+  RingGeometry,
+  SRGBColorSpace,
+  Scene,
+  Vector3,
+  WebGLRenderer,
+  type Blending,
+  type Material,
+  type Object3D,
+} from "three";
 import type { SceneBerth, SceneJob, SceneModel, SceneSite } from "./scene-model.ts";
 
 export type Flowline3DStats = {
@@ -67,32 +99,34 @@ const COLORS = {
   live: 0x2fe08a,
   hazard: 0xd9a021,
   glow: 0x2f7fa8,
-  /* The four job identities, given as the sRGB the chips and slabs are painted in on the
+  /* The five job identities, given as the sRGB the chips and slabs are painted in on the
      board — not as material colours. A block's material is derived from these, because this
      floor is lit and the board is not: see TINT. */
   ice: 0xccd6ff,
   azure: 0x5cb8ee,
   violet: 0xb585f2,
   cobalt: 0x6f8bea,
+  quartz: 0xe9a6dd,
 };
 
 /**
- * Which job a block is, on the floor as on the board: the same four sRGB values the queue
+ * Which job a block is, on the floor as on the board: the same five sRGB values the queue
  * chips and the 2.5D slabs are painted in, so there is one palette rather than a DOM one
  * and a canvas one that drift apart.
  *
  * A material colour is not a painted pixel, though. This floor is lit and the board is not,
- * so handing these four to a lit material is what made the floor unreadable: measured off a
- * 1440x900 screenshot, the four caps came out 5.2 to 11.7 ΔE apart — one blue-grey, four
- * times — while the chips they name are 23.7 apart. The cap therefore takes the value here
- * unlit and the body takes it through FACE_GAIN, which is the light measured rather than
- * guessed at.
+ * so handing these straight to a lit material is what made the floor unreadable: measured off
+ * a 1440x900 screenshot of the four-job palette, those caps came out 5.2 to 11.7 ΔE apart —
+ * one blue-grey, four times — while the chips they name are 23.7 apart. The cap therefore
+ * takes the value here unlit and the body takes it through FACE_GAIN, which is the light
+ * measured rather than guessed at.
  */
 const TINT: Record<SceneJob["tint"], number> = {
   ice: COLORS.ice,
   azure: COLORS.azure,
   violet: COLORS.violet,
   cobalt: COLORS.cobalt,
+  quartz: COLORS.quartz,
 };
 
 /**
@@ -117,19 +151,19 @@ const FACE_GAIN = [0.334, 0.496, 0.566] as const;
  */
 const FACE_LEVEL = 0.22;
 
-const ALBEDO = new THREE.Color();
+const ALBEDO = new Color();
 
 /**
  * The albedo that paints `level` of `tint` on a lit face. Clamped at 1: a target the rig
  * cannot reach comes out as bright as it can rather than wrapping.
  */
-function albedoFor(tint: number, level: number): THREE.Color {
+function albedoFor(tint: number, level: number): Color {
   ALBEDO.setHex(tint);
   ALBEDO.setRGB(
     Math.min(1, (ALBEDO.r * level) / FACE_GAIN[0]),
     Math.min(1, (ALBEDO.g * level) / FACE_GAIN[1]),
     Math.min(1, (ALBEDO.b * level) / FACE_GAIN[2]),
-    THREE.LinearSRGBColorSpace,
+    LinearSRGBColorSpace,
   );
   return ALBEDO;
 }
@@ -244,14 +278,14 @@ function slotX(slot: number, slots: number): number {
   return -SLOT_SPAN / 2 + (slot - 0.5) * cell;
 }
 
-type TrackedMaterial = THREE.Material & { color?: THREE.Color; opacity?: number; transparent?: boolean };
+type TrackedMaterial = Material & { color?: Color; opacity?: number; transparent?: boolean };
 
 type Tracked = {
-  geometries: Set<THREE.BufferGeometry>;
+  geometries: Set<BufferGeometry>;
   materials: Set<TrackedMaterial>;
 };
 
-function keepGeometry<T extends THREE.BufferGeometry>(geometry: T, tracked: Tracked): T {
+function keepGeometry<T extends BufferGeometry>(geometry: T, tracked: Tracked): T {
   tracked.geometries.add(geometry);
   return geometry;
 }
@@ -298,12 +332,12 @@ function shrink(width: number, depth: number, cut: number, margin: number): Pt[]
  * a ring and draws the wall of the recess it leaves; passing equal heights makes it a
  * flat cap face with no walls at all.
  *
- * The triangles are written out here rather than extruded from a THREE.Shape because
+ * The triangles are written out here rather than extruded from a Shape because
  * the shape extruder is a large slice of three.js to pull into the bundle for eight
  * corners, and because unshared corner vertices are what keep every face of this
  * diorama flat-shaded.
  */
-function deckPart(outer: Pt[], inner: Pt[] | undefined, base: number, top: number, tracked: Tracked): THREE.BufferGeometry {
+function deckPart(outer: Pt[], inner: Pt[] | undefined, base: number, top: number, tracked: Tracked): BufferGeometry {
   const out: number[] = [];
   const tri = (a: Pt, ay: number, b: Pt, by: number, c: Pt, cy: number) => {
     out.push(a.x, ay, a.z, b.x, by, b.z, c.x, cy, c.z);
@@ -340,8 +374,8 @@ function deckPart(outer: Pt[], inner: Pt[] | undefined, base: number, top: numbe
       }
     }
   }
-  const geometry = keepGeometry(new THREE.BufferGeometry(), tracked);
-  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(out), 3));
+  const geometry = keepGeometry(new BufferGeometry(), tracked);
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(out), 3));
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -401,15 +435,15 @@ function paintArrow(marks: Painted[], x: number, y: number, z: number, size: num
  * passed in because a set of marks that belongs to one berth's closed state has to
  * be shown and hidden with that berth rather than with the floor.
  */
-function buildPainted(marks: Painted[], color: number, opacity: number, decal: THREE.BoxGeometry, parent: THREE.Object3D, tracked: Tracked): void {
+function buildPainted(marks: Painted[], color: number, opacity: number, decal: BoxGeometry, parent: Object3D, tracked: Tracked): void {
   if (!marks.length) return;
-  const material = keepMaterial(new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, fog: false }), tracked);
-  const mesh = new THREE.InstancedMesh(decal, material, marks.length);
-  const turn = new THREE.Quaternion();
-  const axis = new THREE.Vector3(0, 1, 0);
-  const place = new THREE.Vector3();
-  const size = new THREE.Vector3();
-  const matrix = new THREE.Matrix4();
+  const material = keepMaterial(new MeshBasicMaterial({ color, transparent: opacity < 1, opacity, fog: false }), tracked);
+  const mesh = new InstancedMesh(decal, material, marks.length);
+  const turn = new Quaternion();
+  const axis = new Vector3(0, 1, 0);
+  const place = new Vector3();
+  const size = new Vector3();
+  const matrix = new Matrix4();
   for (let index = 0; index < marks.length; index += 1) {
     const mark = marks[index];
     turn.setFromAxisAngle(axis, mark.angle);
@@ -427,21 +461,21 @@ function buildPainted(marks: Painted[], color: number, opacity: number, decal: T
  * contact shadow under a block and the halo around a lit lamp all need a soft edge to
  * read as light. One geometry per size, shared by every disc drawn at that size.
  */
-function fadedDisc(radius: number, strength: number, tracked: Tracked): THREE.BufferGeometry {
-  const geometry = keepGeometry(new THREE.CircleGeometry(radius, 32), tracked);
+function fadedDisc(radius: number, strength: number, tracked: Tracked): BufferGeometry {
+  const geometry = keepGeometry(new CircleGeometry(radius, 32), tracked);
   const count = geometry.getAttribute("position").count;
   const shade = new Float32Array(count * 4).fill(1);
   // CircleGeometry emits the hub vertex first and the rim after it, so the falloff
   // is one carrying vertex followed by transparent ones.
   for (let index = 0; index < count; index += 1) shade[index * 4 + 3] = index === 0 ? strength : 0;
-  geometry.setAttribute("color", new THREE.BufferAttribute(shade, 4));
+  geometry.setAttribute("color", new BufferAttribute(shade, 4));
   return geometry;
 }
 
 /** The colour and blend one faded disc is drawn in. The falloff lives in the geometry. */
-function discTone(color: number, blending: THREE.Blending, tracked: Tracked): TrackedMaterial {
+function discTone(color: number, blending: Blending, tracked: Tracked): TrackedMaterial {
   return keepMaterial(
-    new THREE.MeshBasicMaterial({ color, vertexColors: true, transparent: true, depthWrite: false, blending, fog: false }),
+    new MeshBasicMaterial({ color, vertexColors: true, transparent: true, depthWrite: false, blending, fog: false }),
     tracked,
   );
 }
@@ -452,7 +486,7 @@ function discTone(color: number, blending: THREE.Blending, tracked: Tracked): Tr
  * same reason: at this size a cut corner reads as a radius, and the mock's frame is a
  * rounded rectangle rather than a box drawn in perspective.
  */
-function selectionRing(width: number, height: number, thickness: number, tracked: Tracked): THREE.BufferGeometry {
+function selectionRing(width: number, height: number, thickness: number, tracked: Tracked): BufferGeometry {
   const cut = Math.min(0.56, height * 0.34);
   const ring = deckPart(octagon(width, height, cut), shrink(width, height, cut, thickness), 0, 0, tracked);
   ring.rotateX(Math.PI / 2);
@@ -460,24 +494,24 @@ function selectionRing(width: number, height: number, thickness: number, tracked
 }
 
 type Shapes = {
-  slab: THREE.BoxGeometry;
-  cap: THREE.BoxGeometry;
-  meter: THREE.BoxGeometry;
+  slab: BoxGeometry;
+  cap: BoxGeometry;
+  meter: BoxGeometry;
   /** The two rings of a selection frame: one crisp edge, one wider band behind it. */
-  frame: THREE.BufferGeometry;
-  frameGlow: THREE.BufferGeometry;
+  frame: BufferGeometry;
+  frameGlow: BufferGeometry;
   /** A lamp lens, and the halo that is drawn over it to burn its middle out to white. */
-  lamp: THREE.CircleGeometry;
-  glow: THREE.BufferGeometry;
+  lamp: CircleGeometry;
+  glow: BufferGeometry;
   /** The occlusion under a job block, at one size for all five stands. */
-  shadow: THREE.BufferGeometry;
+  shadow: BufferGeometry;
   /** The stalk of a warning beacon. */
-  post: THREE.CylinderGeometry;
-  slat: THREE.BoxGeometry;
+  post: CylinderGeometry;
+  slat: BoxGeometry;
   /** A unit box every lane, span, inlay and rail is scaled from, so they cost one geometry between them. */
-  unit: THREE.BoxGeometry;
+  unit: BoxGeometry;
   /** The bar behind every painted floor marking, scaled per instance. */
-  decal: THREE.BoxGeometry;
+  decal: BoxGeometry;
 };
 
 /**
@@ -494,10 +528,10 @@ type SlabTones = {
 };
 
 type SlabVisual = {
-  group: THREE.Group;
-  fill: THREE.Mesh;
-  frame: THREE.Group;
-  shadow: THREE.Mesh;
+  group: Group;
+  fill: Mesh;
+  frame: Group;
+  shadow: Mesh;
   body: TrackedMaterial;
   cap: TrackedMaterial;
   meter: TrackedMaterial;
@@ -507,9 +541,9 @@ type SlabVisual = {
    * same block travels between two stands instead of one block vanishing and another
    * appearing. `at` is the un-lifted position, which is what the next move starts from.
    */
-  from: THREE.Vector3;
-  to: THREE.Vector3;
-  at: THREE.Vector3;
+  from: Vector3;
+  to: Vector3;
+  at: Vector3;
   travel: boolean;
   lift: number;
   /** Whether the block was on the floor before this update, so an arrival does not fly in. */
@@ -522,39 +556,39 @@ type SlabVisual = {
  * `lookAt(eye)`, which only holds while the camera stands still — and the view presets
  * move it — so every card is collected here and re-aimed together.
  */
-type Cards = { eye: THREE.Vector3; faces: THREE.Object3D[] };
+type Cards = { eye: Vector3; faces: Object3D[] };
 
-function face(cards: Cards, object: THREE.Object3D): void {
+function face(cards: Cards, object: Object3D): void {
   object.lookAt(cards.eye);
   cards.faces.push(object);
 }
 
 /** A job block: solid body, lit cap, and a meter on the face that reads to camera. */
-function buildSlab(name: string, shapes: Shapes, tones: SlabTones, cards: Cards, scene: THREE.Scene, tracked: Tracked): SlabVisual {
-  const group = new THREE.Group();
+function buildSlab(name: string, shapes: Shapes, tones: SlabTones, cards: Cards, scene: Scene, tracked: Tracked): SlabVisual {
+  const group = new Group();
   group.name = `slab-${name}`;
 
-  const body = keepMaterial(new THREE.MeshStandardMaterial({ color: COLORS.steelTop, roughness: 0.52, metalness: 0.12 }), tracked);
-  group.add(new THREE.Mesh(shapes.slab, body));
+  const body = keepMaterial(new MeshStandardMaterial({ color: COLORS.steelTop, roughness: 0.52, metalness: 0.12 }), tracked);
+  group.add(new Mesh(shapes.slab, body));
 
   // The cap is unlit, like the kerb rail's own lit strip, so it paints the job's colour
   // exactly rather than that colour through the rig. It loses nothing by it: the probe
   // renders that fitted GAIN put an identical pixel on all four caps from all four stands,
   // so this face never had any shading to lose. What it gains is a block that is the same
   // colour as its chip, and dark label ink that clears 4.5:1 on every one of the four.
-  const cap = keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.steelTop, fog: false }), tracked);
-  const capMesh = new THREE.Mesh(shapes.cap, cap);
+  const cap = keepMaterial(new MeshBasicMaterial({ color: COLORS.steelTop, fog: false }), tracked);
+  const capMesh = new Mesh(shapes.cap, cap);
   capMesh.position.y = 0.38;
   group.add(capMesh);
 
   // High enough on the face to clear the collar the block stands in: the meter is
   // read from the same distance as the label above it, so it cannot sit in the socket.
-  const trackMesh = new THREE.Mesh(shapes.meter, tones.track);
+  const trackMesh = new Mesh(shapes.meter, tones.track);
   trackMesh.position.set(0, -0.1, 0.76);
   group.add(trackMesh);
 
-  const meter = keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.ink }), tracked);
-  const fill = new THREE.Mesh(shapes.meter, meter);
+  const meter = keepMaterial(new MeshBasicMaterial({ color: COLORS.ink }), tracked);
+  const fill = new Mesh(shapes.meter, meter);
   fill.position.set(0, -0.1, 0.78);
   group.add(fill);
 
@@ -564,11 +598,11 @@ function buildSlab(name: string, shapes: Shapes, tones: SlabTones, cards: Cards,
   // stands on, so the frame is drawn over the scene instead of in it: no depth test, in
   // the pass that runs after the floor. Its wider ring is additive, which is what makes
   // a two pixel line read as a lit one rather than as a drawn border.
-  const frame = new THREE.Group();
+  const frame = new Group();
   frame.position.set(0, 0.08, 0.1);
   frame.renderOrder = 3;
   frame.visible = false;
-  frame.add(new THREE.Mesh(shapes.frameGlow, tones.frameGlow), new THREE.Mesh(shapes.frame, tones.frame));
+  frame.add(new Mesh(shapes.frameGlow, tones.frameGlow), new Mesh(shapes.frame, tones.frame));
   group.add(frame);
   face(cards, frame);
 
@@ -577,7 +611,7 @@ function buildSlab(name: string, shapes: Shapes, tones: SlabTones, cards: Cards,
   // floor rather than carrying it through the air. It is wider than the block it sits
   // under: the key light is high and soft, so what reads at this angle is the occlusion
   // around the block, not a cast profile.
-  const shadow = new THREE.Mesh(shapes.shadow, tones.shadow);
+  const shadow = new Mesh(shapes.shadow, tones.shadow);
   shadow.rotation.x = -Math.PI / 2;
   shadow.scale.set(1, 0.66, 1);
   shadow.visible = false;
@@ -593,9 +627,9 @@ function buildSlab(name: string, shapes: Shapes, tones: SlabTones, cards: Cards,
     body,
     cap,
     meter,
-    from: new THREE.Vector3(),
-    to: new THREE.Vector3(),
-    at: new THREE.Vector3(),
+    from: new Vector3(),
+    to: new Vector3(),
+    at: new Vector3(),
     travel: false,
     lift: 0,
     shown: false,
@@ -664,11 +698,11 @@ type Steel = {
 
 function buildSteel(tracked: Tracked): Steel {
   return {
-    wall: keepMaterial(new THREE.MeshStandardMaterial({ color: COLORS.steel, roughness: 0.82, metalness: 0.24 }), tracked),
-    plate: keepMaterial(new THREE.MeshStandardMaterial({ color: COLORS.steelTop, roughness: 0.7, metalness: 0.18 }), tracked),
-    rail: keepMaterial(new THREE.MeshStandardMaterial({ color: COLORS.steelRail, roughness: 0.62, metalness: 0.3 }), tracked),
-    cap: keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.steelCap }), tracked),
-    lane: keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.lane }), tracked),
+    wall: keepMaterial(new MeshStandardMaterial({ color: COLORS.steel, roughness: 0.82, metalness: 0.24 }), tracked),
+    plate: keepMaterial(new MeshStandardMaterial({ color: COLORS.steelTop, roughness: 0.7, metalness: 0.18 }), tracked),
+    rail: keepMaterial(new MeshStandardMaterial({ color: COLORS.steelRail, roughness: 0.62, metalness: 0.3 }), tracked),
+    cap: keepMaterial(new MeshBasicMaterial({ color: COLORS.steelCap }), tracked),
+    lane: keepMaterial(new MeshBasicMaterial({ color: COLORS.lane }), tracked),
   };
 }
 
@@ -679,7 +713,7 @@ function buildSteel(tracked: Tracked): Steel {
  * deck surface it built, so whatever stands on this bay is placed from the geometry
  * instead of from a height copied by hand into another block.
  */
-function buildPlatform(spec: PlatformSpec, steel: Steel, marks: Marks, scene: THREE.Scene, tracked: Tracked): number {
+function buildPlatform(spec: PlatformSpec, steel: Steel, marks: Marks, scene: Scene, tracked: Tracked): number {
   const [cx, cy, cz] = spec.center;
   const [width, height, depth] = spec.size;
   const base = cy - height / 2;
@@ -687,15 +721,15 @@ function buildPlatform(spec: PlatformSpec, steel: Steel, marks: Marks, scene: TH
   const lip = octagon(width, depth, CHAMFER);
   const inner = shrink(width, depth, CHAMFER, RIM);
 
-  const wall = new THREE.Mesh(deckPart(lip, undefined, 0, height, tracked), steel.wall);
+  const wall = new Mesh(deckPart(lip, undefined, 0, height, tracked), steel.wall);
   wall.position.set(cx, base, cz);
   scene.add(wall);
 
-  const plate = new THREE.Mesh(deckPart(inner, undefined, 0, PLATE, tracked), steel.plate);
+  const plate = new Mesh(deckPart(inner, undefined, 0, PLATE, tracked), steel.plate);
   plate.position.set(cx, top, cz);
   scene.add(plate);
 
-  const rail = new THREE.Mesh(deckPart(lip, inner, 0, RAIL_H, tracked), steel.rail);
+  const rail = new Mesh(deckPart(lip, inner, 0, RAIL_H, tracked), steel.rail);
   rail.position.set(cx, top, cz);
   scene.add(rail);
 
@@ -703,7 +737,7 @@ function buildPlatform(spec: PlatformSpec, steel: Steel, marks: Marks, scene: TH
   // rail's own edges so those edges stay dark and the lip reads as a cut chamfer
   // rather than as a painted line.
   const capGeometry = deckPart(shrink(width, depth, CHAMFER, 0.05), shrink(width, depth, CHAMFER, RIM - 0.05), RAIL_H + 0.004, RAIL_H + 0.004, tracked);
-  const cap = new THREE.Mesh(capGeometry, steel.cap);
+  const cap = new Mesh(capGeometry, steel.cap);
   cap.position.set(cx, top, cz);
   scene.add(cap);
 
@@ -751,7 +785,7 @@ function buildPlatform(spec: PlatformSpec, steel: Steel, marks: Marks, scene: TH
  * of furniture it wears only while it is closed. Gathering the materials in one list is
  * what stops a berth ending up with a green lamp over a shut lane.
  */
-type BerthVisual = { tone: TrackedMaterial[]; offline: THREE.Group };
+type BerthVisual = { tone: TrackedMaterial[]; offline: Group };
 
 /**
  * One dispatch berth: its lane, the lit segments and gantry lamps that state whether it
@@ -759,11 +793,11 @@ type BerthVisual = { tone: TrackedMaterial[]; offline: THREE.Group };
  * barrier up its own lane, hatching over the run past it, a cross over the pad no job
  * can stand on, and a warning beacon at the mouth.
  */
-function buildBerth(index: number, shapes: Shapes, steel: Steel, deck: number, marks: Marks, cards: Cards, scene: THREE.Scene, tracked: Tracked): BerthVisual {
+function buildBerth(index: number, shapes: Shapes, steel: Steel, deck: number, marks: Marks, cards: Cards, scene: Scene, tracked: Tracked): BerthVisual {
   const x = BERTH_X[index];
   const pad = SITE[index === 0 ? "berth-1" : "berth-2"];
 
-  const lane = new THREE.Mesh(shapes.unit, steel.lane);
+  const lane = new Mesh(shapes.unit, steel.lane);
   lane.scale.set(2.5, 0.03, 5.4);
   lane.position.set(x, deck + 0.015, -0.8);
   scene.add(lane);
@@ -772,7 +806,7 @@ function buildBerth(index: number, shapes: Shapes, steel: Steel, deck: number, m
   // alone: at this angle a flat inlay reads as a stain on the deck, and a rail is
   // what makes it read as a channel a block travels down.
   for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(shapes.unit, steel.cap);
+    const rail = new Mesh(shapes.unit, steel.cap);
     rail.scale.set(0.1, 0.08, 5.4);
     rail.position.set(x + side * 1.2, deck + 0.04, -0.8);
     scene.add(rail);
@@ -781,12 +815,12 @@ function buildBerth(index: number, shapes: Shapes, steel: Steel, deck: number, m
   // The berth states its status down its own rails as a row of lit segments, which is
   // how the mock says a lane is running or shut without printing a word on the floor.
   // They are one instanced mesh because they never move and always agree with each other.
-  const pips = keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.live, fog: false }), tracked);
-  const pipMesh = new THREE.InstancedMesh(shapes.unit, pips, 8);
-  const pipPlace = new THREE.Matrix4();
-  const pipTurn = new THREE.Quaternion();
-  const pipSize = new THREE.Vector3(0.15, 0.05, 0.52);
-  const pipAt = new THREE.Vector3();
+  const pips = keepMaterial(new MeshBasicMaterial({ color: COLORS.live, fog: false }), tracked);
+  const pipMesh = new InstancedMesh(shapes.unit, pips, 8);
+  const pipPlace = new Matrix4();
+  const pipTurn = new Quaternion();
+  const pipSize = new Vector3(0.15, 0.05, 0.52);
+  const pipAt = new Vector3();
   let pip = 0;
   for (const side of [-1, 1]) {
     for (const z of [-2.9, -1.8, -0.7, 0.4]) {
@@ -804,16 +838,16 @@ function buildBerth(index: number, shapes: Shapes, steel: Steel, deck: number, m
     paintChevron(marks.flow, x, deck + 0.07, -1 - row, 0, 1.15);
   }
 
-  const mast = keepGeometry(new THREE.BoxGeometry(0.14, 1.5, 0.14), tracked);
+  const mast = keepGeometry(new BoxGeometry(0.14, 1.5, 0.14), tracked);
   for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(mast, steel.rail);
+    const leg = new Mesh(mast, steel.rail);
     leg.position.set(x + side * 1.06, 1.25, -3.4);
     scene.add(leg);
   }
   // A header plate rather than a bare beam: the berth's name is printed on its
   // upper band and its status lights are inset below, which is how the mock says
   // which berth you are looking at without drawing text into the canvas.
-  const header = new THREE.Mesh(keepGeometry(new THREE.BoxGeometry(2.4, 0.62, 0.2), tracked), steel.rail);
+  const header = new Mesh(keepGeometry(new BoxGeometry(2.4, 0.62, 0.2), tracked), steel.rail);
   header.position.set(x, 2.1, -3.4);
   scene.add(header);
 
@@ -821,40 +855,40 @@ function buildBerth(index: number, shapes: Shapes, steel: Steel, deck: number, m
   // lamp burns its own middle out to white and throws its colour into the air around it,
   // and a flat coloured plate does neither. Both lamps on a gantry share one lens tone
   // and one halo tone, because they always say the same thing.
-  const lens = keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.live, fog: false }), tracked);
-  const halo = discTone(COLORS.live, THREE.AdditiveBlending, tracked);
+  const lens = keepMaterial(new MeshBasicMaterial({ color: COLORS.live, fog: false }), tracked);
+  const halo = discTone(COLORS.live, AdditiveBlending, tracked);
   for (const side of [-1, 1]) {
-    const lamp = new THREE.Mesh(shapes.lamp, lens);
+    const lamp = new Mesh(shapes.lamp, lens);
     lamp.position.set(x + side * 0.82, 1.9, -3.28);
     scene.add(lamp);
     face(cards, lamp);
-    const flare = new THREE.Mesh(shapes.glow, halo);
+    const flare = new Mesh(shapes.glow, halo);
     flare.position.set(x + side * 0.82, 1.9, -3.1);
     flare.scale.setScalar(0.8);
     scene.add(flare);
     face(cards, flare);
   }
 
-  const offline = new THREE.Group();
+  const offline = new Group();
   offline.name = `berth-${index + 1}-offline`;
   // A dark board carries the padlock and the striped beam over it carries the bars, so
   // the closed berth reads as one barrier rather than as a row of loose slats. The lit
   // cap at each end of the beam is the same lens the gantry uses, in the colour a shut
   // lane is always in.
-  const board = new THREE.Mesh(
-    keepGeometry(new THREE.BoxGeometry(2.14, 0.92, 0.07), tracked),
-    keepMaterial(new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.9, metalness: 0.08 }), tracked),
+  const board = new Mesh(
+    keepGeometry(new BoxGeometry(2.14, 0.92, 0.07), tracked),
+    keepMaterial(new MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.9, metalness: 0.08 }), tracked),
   );
   board.position.set(x, deck + LOCK_Y, BARRIER_Z);
   offline.add(board);
 
-  const beam = new THREE.Mesh(keepGeometry(new THREE.BoxGeometry(2.42, 0.26, 0.16), tracked), steel.rail);
+  const beam = new Mesh(keepGeometry(new BoxGeometry(2.42, 0.26, 0.16), tracked), steel.rail);
   beam.position.set(x, deck + 1.02, BARRIER_Z);
   offline.add(beam);
 
-  const stripe = keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.hazard }), tracked);
+  const stripe = keepMaterial(new MeshBasicMaterial({ color: COLORS.hazard }), tracked);
   for (let slat = 0; slat < 7; slat += 1) {
-    const bar = new THREE.Mesh(shapes.slat, stripe);
+    const bar = new Mesh(shapes.slat, stripe);
     // Clear of the beam's own front face rather than let into it: a slat that straddles
     // that face flickers as the two surfaces trade places from pixel to pixel.
     bar.position.set(x - 0.9 + slat * 0.3, deck + 1.02, BARRIER_Z + 0.12);
@@ -862,9 +896,9 @@ function buildBerth(index: number, shapes: Shapes, steel: Steel, deck: number, m
     offline.add(bar);
   }
 
-  const shut = keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.coral, fog: false }), tracked);
+  const shut = keepMaterial(new MeshBasicMaterial({ color: COLORS.coral, fog: false }), tracked);
   for (const side of [-1, 1]) {
-    const cap = new THREE.Mesh(shapes.lamp, shut);
+    const cap = new Mesh(shapes.lamp, shut);
     cap.position.set(x + side * 1.24, deck + 1.02, BARRIER_Z + 0.15);
     cap.scale.setScalar(0.62);
     offline.add(cap);
@@ -883,15 +917,15 @@ function buildBerth(index: number, shapes: Shapes, steel: Steel, deck: number, m
   // The beacon at the mouth of the lane is the one mark on this floor that has to be
   // seen from the far side of the frame, so it is a lit head with a halo half again as
   // wide as the head itself rather than a lamp the size of the gantry's.
-  const stalk = new THREE.Mesh(shapes.post, steel.wall);
+  const stalk = new Mesh(shapes.post, steel.wall);
   stalk.position.set(x + BEACON_DX, deck + 0.37, BEACON_Z);
   offline.add(stalk);
-  const head = new THREE.Mesh(shapes.lamp, shut);
+  const head = new Mesh(shapes.lamp, shut);
   head.position.set(x + BEACON_DX, deck + 0.86, BEACON_Z);
   head.scale.setScalar(1.4);
   offline.add(head);
   face(cards, head);
-  const beaconGlow = new THREE.Mesh(shapes.glow, discTone(COLORS.coral, THREE.AdditiveBlending, tracked));
+  const beaconGlow = new Mesh(shapes.glow, discTone(COLORS.coral, AdditiveBlending, tracked));
   beaconGlow.position.set(x + BEACON_DX, deck + 0.86, BEACON_Z + 0.22);
   beaconGlow.scale.setScalar(1.7);
   offline.add(beaconGlow);
@@ -917,19 +951,19 @@ type SpanSpec = { x: number; z: number; length: number; width: number; top: numb
  * surface it built, so whatever the span carries is painted onto that geometry instead
  * of at a height guessed from outside.
  */
-function buildSpan(spec: SpanSpec, steel: Steel, unit: THREE.BoxGeometry, scene: THREE.Scene): number {
-  const pier = new THREE.Mesh(unit, steel.wall);
+function buildSpan(spec: SpanSpec, steel: Steel, unit: BoxGeometry, scene: Scene): number {
+  const pier = new Mesh(unit, steel.wall);
   pier.scale.set(spec.length * 0.48, spec.top, spec.width * 0.7);
   pier.position.set(spec.x, spec.top / 2, spec.z);
   scene.add(pier);
 
-  const run = new THREE.Mesh(unit, steel.lane);
+  const run = new Mesh(unit, steel.lane);
   run.scale.set(spec.length, 0.1, spec.width);
   run.position.set(spec.x, spec.top, spec.z);
   scene.add(run);
 
   for (const side of [-1, 1]) {
-    const kerb = new THREE.Mesh(unit, steel.rail);
+    const kerb = new Mesh(unit, steel.rail);
     kerb.scale.set(spec.length, 0.16, 0.15);
     kerb.position.set(spec.x, spec.top + 0.03, spec.z + side * (spec.width / 2 - 0.075));
     scene.add(kerb);
@@ -939,18 +973,21 @@ function buildSpan(spec: SpanSpec, steel: Steel, unit: THREE.BoxGeometry, scene:
 
 export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneModel, options: Flowline3DOptions = {}): Flowline3DController {
   const tracked: Tracked = { geometries: new Set(), materials: new Set() };
-  let renderer: THREE.WebGLRenderer;
+  let renderer: WebGLRenderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "low-power", preserveDrawingBuffer: options.preserveDrawingBuffer ?? false });
+    renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "low-power", preserveDrawingBuffer: options.preserveDrawingBuffer ?? false });
   } catch {
     throw new Error("WebGL is unavailable in this browser.");
   }
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  // Keep the optional explanation layer within the performance plan's 1.25 cap.
+  // The DOM timeline remains the playable path when a high-DPR device cannot sustain
+  // the floor, so extra pixels are not worth trading against input responsiveness.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
   renderer.setClearColor(COLORS.background, 1);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.outputColorSpace = SRGBColorSpace;
 
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(COLORS.background, 25, 64);
+  const scene = new Scene();
+  scene.fog = new Fog(COLORS.background, 25, 64);
 
   // The floor opens on one vantage point, framed so it fills the box: the prep bay at
   // the left edge, the dispatch bay at the right, and the slot strip along the bottom.
@@ -958,7 +995,7 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
   // and re-projects the anchors, which is what lets every word on this floor stay DOM
   // text. All four views sit on the line they look along, so a run of slot cells
   // projects to a level row instead of a slope.
-  const camera = new THREE.PerspectiveCamera(34, 1.55, 1, 140);
+  const camera = new PerspectiveCamera(34, 1.55, 1, 140);
   camera.position.set(0.4, 11.6, 18.6);
   camera.lookAt(0.4, 1.2, 0.7);
   fitCamera(1.55);
@@ -971,14 +1008,14 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
    */
   function fitCamera(aspect: number): void {
     camera.aspect = aspect;
-    camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(H_HALF_TAN / aspect));
+    camera.fov = MathUtils.radToDeg(2 * Math.atan(H_HALF_TAN / aspect));
     camera.updateProjectionMatrix();
   }
 
-  scene.add(new THREE.AmbientLight(0x8fc7de, 1.15));
-  const key = new THREE.DirectionalLight(0xdff6ff, 2.1);
+  scene.add(new AmbientLight(0x8fc7de, 1.15));
+  const key = new DirectionalLight(0xdff6ff, 2.1);
   key.position.set(-7, 11, 9);
-  const rim = new THREE.DirectionalLight(0x3fb6c8, 0.8);
+  const rim = new DirectionalLight(0x3fb6c8, 0.8);
   rim.position.set(11, 6, -7);
   scene.add(key, rim);
 
@@ -987,17 +1024,17 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
   // screen shows its own sweep. They are cards turned to whichever view is standing and
   // held out of the fog, so they read as light in the air rather than as plant parked in
   // the scene, and the floor still occludes whatever falls below it.
-  const sky = new THREE.Mesh(fadedDisc(11, 0.34, tracked), discTone(COLORS.glow, THREE.AdditiveBlending, tracked));
+  const sky = new Mesh(fadedDisc(11, 0.34, tracked), discTone(COLORS.glow, AdditiveBlending, tracked));
   sky.position.set(9.4, 1.4, -13.5);
   face(cards, sky);
   scene.add(sky);
 
   const sweep = keepMaterial(
-    new THREE.MeshBasicMaterial({ color: COLORS.glow, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+    new MeshBasicMaterial({ color: COLORS.glow, transparent: true, opacity: 0.22, depthWrite: false, blending: AdditiveBlending, fog: false }),
     tracked,
   );
   for (const radius of [10.5, 14.2, 18.4]) {
-    const arc = new THREE.Mesh(keepGeometry(new THREE.RingGeometry(radius, radius + 0.08, 72, 1, Math.PI * 0.82, Math.PI * 0.6), tracked), sweep);
+    const arc = new Mesh(keepGeometry(new RingGeometry(radius, radius + 0.08, 72, 1, Math.PI * 0.82, Math.PI * 0.6), tracked), sweep);
     arc.position.set(17.5, 6.6, -13.5);
     face(cards, arc);
     scene.add(arc);
@@ -1005,36 +1042,36 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
 
   // The deck runs well past the grid, so the floor recedes into the fog instead
   // of ending at a hard edge partway up the frame.
-  const deck = new THREE.Mesh(
-    keepGeometry(new THREE.PlaneGeometry(26, 40), tracked),
-    keepMaterial(new THREE.MeshStandardMaterial({ color: COLORS.deck, roughness: 0.95, metalness: 0.03 }), tracked),
+  const deck = new Mesh(
+    keepGeometry(new PlaneGeometry(26, 40), tracked),
+    keepMaterial(new MeshStandardMaterial({ color: COLORS.deck, roughness: 0.95, metalness: 0.03 }), tracked),
   );
   deck.rotation.x = -Math.PI / 2;
   deck.position.y = -0.02;
   scene.add(deck);
 
-  const grid = new THREE.GridHelper(26, 26, COLORS.deckLine, COLORS.deckLineFaint);
+  const grid = new GridHelper(26, 26, COLORS.deckLine, COLORS.deckLineFaint);
   grid.position.y = 0.01;
   scene.add(grid);
   tracked.geometries.add(grid.geometry);
   tracked.materials.add(grid.material as TrackedMaterial);
 
   const shapes: Shapes = {
-    slab: keepGeometry(new THREE.BoxGeometry(1.9, 0.7, 1.5), tracked),
-    cap: keepGeometry(new THREE.BoxGeometry(1.98, 0.07, 1.58), tracked),
-    meter: keepGeometry(new THREE.BoxGeometry(1.4, 0.12, 0.06), tracked),
+    slab: keepGeometry(new BoxGeometry(1.9, 0.7, 1.5), tracked),
+    cap: keepGeometry(new BoxGeometry(1.98, 0.07, 1.58), tracked),
+    meter: keepGeometry(new BoxGeometry(1.4, 0.12, 0.06), tracked),
     // The frame is cut a touch wider than the block's own cap so it reads as a box
     // drawn around the selection rather than as a bead along its edge, and the band
     // behind it is wider and much softer, which is what makes the line look lit.
     frame: selectionRing(2.34, 1.62, 0.15, tracked),
     frameGlow: selectionRing(2.62, 1.9, 0.44, tracked),
-    lamp: keepGeometry(new THREE.CircleGeometry(0.13, 16), tracked),
+    lamp: keepGeometry(new CircleGeometry(0.13, 16), tracked),
     glow: fadedDisc(0.4, 0.85, tracked),
     shadow: fadedDisc(1.5, 0.62, tracked),
-    post: keepGeometry(new THREE.CylinderGeometry(0.13, 0.17, 0.74, 10), tracked),
-    slat: keepGeometry(new THREE.BoxGeometry(0.09, 0.24, 0.05), tracked),
-    unit: keepGeometry(new THREE.BoxGeometry(1, 1, 1), tracked),
-    decal: keepGeometry(new THREE.BoxGeometry(1, 0.06, 1), tracked),
+    post: keepGeometry(new CylinderGeometry(0.13, 0.17, 0.74, 10), tracked),
+    slat: keepGeometry(new BoxGeometry(0.09, 0.24, 0.05), tracked),
+    unit: keepGeometry(new BoxGeometry(1, 1, 1), tracked),
+    decal: keepGeometry(new BoxGeometry(1, 0.06, 1), tracked),
   };
 
   // The blocks share every tone that says nothing about which job is standing there,
@@ -1044,10 +1081,10 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
   // own front face, and the mock shows a whole box. It is the same mint the floor marks
   // flow in, because both are the view saying "this is the path you asked about".
   const slabTones: SlabTones = {
-    track: keepMaterial(new THREE.MeshBasicMaterial({ color: 0x0b1a26, fog: false }), tracked),
-    frame: keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.teal, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false, fog: false }), tracked),
-    frameGlow: keepMaterial(new THREE.MeshBasicMaterial({ color: COLORS.teal, transparent: true, opacity: 0.22, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }), tracked),
-    shadow: discTone(0x01080f, THREE.NormalBlending, tracked),
+    track: keepMaterial(new MeshBasicMaterial({ color: 0x0b1a26, fog: false }), tracked),
+    frame: keepMaterial(new MeshBasicMaterial({ color: COLORS.teal, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false, fog: false }), tracked),
+    frameGlow: keepMaterial(new MeshBasicMaterial({ color: COLORS.teal, transparent: true, opacity: 0.22, depthTest: false, depthWrite: false, blending: AdditiveBlending, fog: false }), tracked),
+    shadow: discTone(0x01080f, NormalBlending, tracked),
   };
 
   const steel = buildSteel(tracked);
@@ -1071,12 +1108,12 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
   // inlay with a light rail down each side, so its chevrons sit in a channel instead of
   // floating on bare plate. It threads the gap the two staggered pads leave between
   // them, which is why it is shorter than the bay is deep.
-  const corridor = new THREE.Mesh(shapes.unit, steel.lane);
+  const corridor = new Mesh(shapes.unit, steel.lane);
   corridor.scale.set(1.5, 0.03, 1.35);
   corridor.position.set(-6.65, prepDeck + 0.015, -0.6);
   scene.add(corridor);
   for (const side of [-1, 1]) {
-    const rail = new THREE.Mesh(shapes.unit, steel.cap);
+    const rail = new Mesh(shapes.unit, steel.cap);
     rail.scale.set(0.09, 0.08, 1.35);
     rail.position.set(-6.65 + side * 0.71, prepDeck + 0.04, -0.6);
     scene.add(rail);
@@ -1097,13 +1134,13 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
     "berth-1": dispatchDeck,
     "berth-2": dispatchDeck,
   };
-  const collarParts: Array<[THREE.BufferGeometry, TrackedMaterial]> = [
+  const collarParts: Array<[BufferGeometry, TrackedMaterial]> = [
     [deckPart(octagon(2.34, 1.94, 0.34), shrink(2.34, 1.94, 0.34, 0.18), 0, 0.14, tracked), steel.rail],
     [deckPart(shrink(2.34, 1.94, 0.34, 0.04), shrink(2.34, 1.94, 0.34, 0.14), 0.144, 0.144, tracked), steel.cap],
   ];
-  const collarPlace = new THREE.Matrix4();
+  const collarPlace = new Matrix4();
   for (const [geometry, material] of collarParts) {
-    const collars = new THREE.InstancedMesh(geometry, material, SLAB_SITES.length);
+    const collars = new InstancedMesh(geometry, material, SLAB_SITES.length);
     SLAB_SITES.forEach((site, index) => {
       collars.setMatrixAt(index, collarPlace.makeTranslation(SITE[site][0], padDeck[site], SITE[site][2]));
     });
@@ -1126,24 +1163,24 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
   // a coral cell laid over whichever slot the critical deadline falls on. It is built
   // like the bays — a dark wall under a lit plate — but in a colder, darker tone,
   // because it is the deadline rail the floor stands in front of rather than plant.
-  const plateIdle = keepMaterial(new THREE.MeshStandardMaterial({ color: COLORS.slot, roughness: 0.8, metalness: 0.16 }), tracked);
-  const plateDeadline = keepMaterial(new THREE.MeshStandardMaterial({ color: COLORS.coral, roughness: 0.48, metalness: 0.12 }), tracked);
-  const kerbWall = new THREE.Mesh(keepGeometry(new THREE.BoxGeometry(SLOT_BAR, SLOT_H, SLOT_D), tracked), keepMaterial(new THREE.MeshStandardMaterial({ color: COLORS.slotWall, roughness: 0.86, metalness: 0.14 }), tracked));
+  const plateIdle = keepMaterial(new MeshStandardMaterial({ color: COLORS.slot, roughness: 0.8, metalness: 0.16 }), tracked);
+  const plateDeadline = keepMaterial(new MeshStandardMaterial({ color: COLORS.coral, roughness: 0.48, metalness: 0.12 }), tracked);
+  const kerbWall = new Mesh(keepGeometry(new BoxGeometry(SLOT_BAR, SLOT_H, SLOT_D), tracked), keepMaterial(new MeshStandardMaterial({ color: COLORS.slotWall, roughness: 0.86, metalness: 0.14 }), tracked));
   kerbWall.position.set(0, SLOT_H / 2, SLOT_Z);
   scene.add(kerbWall);
-  const kerb = new THREE.Mesh(keepGeometry(new THREE.BoxGeometry(SLOT_BAR, PLATE, SLOT_D - 0.14), tracked), plateIdle);
+  const kerb = new Mesh(keepGeometry(new BoxGeometry(SLOT_BAR, PLATE, SLOT_D - 0.14), tracked), plateIdle);
   kerb.position.set(0, SLOT_H + PLATE / 2, SLOT_Z);
   scene.add(kerb);
-  const groove = keepGeometry(new THREE.BoxGeometry(0.09, 0.03, SLOT_D - 0.1), tracked);
-  const grooveTone = keepMaterial(new THREE.MeshBasicMaterial({ color: 0x0d1117 }), tracked);
+  const groove = keepGeometry(new BoxGeometry(0.09, 0.03, SLOT_D - 0.1), tracked);
+  const grooveTone = keepMaterial(new MeshBasicMaterial({ color: 0x0d1117 }), tracked);
   const grooves = Array.from({ length: MAX_SLOTS + 1 }, () => {
-    const rib = new THREE.Mesh(groove, grooveTone);
+    const rib = new Mesh(groove, grooveTone);
     rib.position.set(0, SLOT_H + PLATE, SLOT_Z);
     rib.visible = false;
     scene.add(rib);
     return rib;
   });
-  const deadlineCell = new THREE.Mesh(keepGeometry(new THREE.BoxGeometry(1, 0.07, SLOT_D - 0.3), tracked), plateDeadline);
+  const deadlineCell = new Mesh(keepGeometry(new BoxGeometry(1, 0.07, SLOT_D - 0.3), tracked), plateDeadline);
   deadlineCell.position.set(0, SLOT_H + PLATE, SLOT_Z);
   deadlineCell.visible = false;
   scene.add(deadlineCell);
@@ -1158,9 +1195,9 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
     { color: COLORS.coral, dash: 0.44, gap: 0.26, width: 0.2 },
     { color: COLORS.teal, dash: 0.24, gap: 0.2, width: 0.17 },
   ].map((spec) => {
-    const mesh = new THREE.InstancedMesh(
+    const mesh = new InstancedMesh(
       shapes.unit,
-      keepMaterial(new THREE.MeshBasicMaterial({ color: spec.color, fog: false }), tracked),
+      keepMaterial(new MeshBasicMaterial({ color: spec.color, fog: false }), tracked),
       ROUTE_DASHES,
     );
     // An instanced mesh keeps the bounding sphere it was built with, and these are
@@ -1192,7 +1229,7 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
   let lastHeight = 0;
   const frameTimes = new Float32Array(720);
   const reducedMotion = Boolean(options.reducedMotion);
-  const projected = new THREE.Vector3();
+  const projected = new Vector3();
 
   /**
    * A label position, or nothing when the point is behind the camera or outside the
@@ -1269,7 +1306,7 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
    */
   function applyView(): void {
     const spec = CAMERA_VIEWS[cameraView];
-    const pitch = THREE.MathUtils.degToRad(spec.pitch);
+    const pitch = MathUtils.degToRad(spec.pitch);
     const distance = spec.distance / cameraZoom;
     const [tx, ty, tz] = spec.target;
     camera.position.set(tx, ty + Math.sin(pitch) * distance, tz + Math.cos(pitch) * distance);
@@ -1289,31 +1326,31 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
    * spread lifts a second route clear of the first and tapers away at the rail, so both
    * arrive at their own cell from the same side.
    */
-  function routePath(lane: number, endSlot: number, slots: number, spread: number): THREE.Vector3[] {
+  function routePath(lane: number, endSlot: number, slots: number, spread: number): Vector3[] {
     const berthX = BERTH_X[Math.min(Math.max(lane, 0), BERTH_X.length - 1)];
     const endX = slotX(Math.min(slots, Math.max(1, endSlot)), slots);
     return [
-      new THREE.Vector3(1.45 - spread * 0.6, ROUTE_Y, 2.2 + spread),
-      new THREE.Vector3(2.7 - spread * 0.5, ROUTE_Y, 3.0 + spread),
-      new THREE.Vector3(berthX - 1.2, ROUTE_Y, 3.25 + spread),
-      new THREE.Vector3(berthX - 0.3, ROUTE_Y, 3.7 + spread),
-      new THREE.Vector3(endX + spread * 1.2, ROUTE_Y, 4.25 + spread * 0.5),
-      new THREE.Vector3(endX, ROUTE_Y, SLOT_Z - 0.9),
+      new Vector3(1.45 - spread * 0.6, ROUTE_Y, 2.2 + spread),
+      new Vector3(2.7 - spread * 0.5, ROUTE_Y, 3.0 + spread),
+      new Vector3(berthX - 1.2, ROUTE_Y, 3.25 + spread),
+      new Vector3(berthX - 0.3, ROUTE_Y, 3.7 + spread),
+      new Vector3(endX + spread * 1.2, ROUTE_Y, 4.25 + spread * 0.5),
+      new Vector3(endX, ROUTE_Y, SLOT_Z - 0.9),
     ];
   }
 
-  const UP = new THREE.Vector3(0, 1, 0);
-  const dashPlace = new THREE.Matrix4();
-  const dashTurn = new THREE.Quaternion();
-  const dashAt = new THREE.Vector3();
-  const dashSize = new THREE.Vector3();
+  const UP = new Vector3(0, 1, 0);
+  const dashPlace = new Matrix4();
+  const dashTurn = new Quaternion();
+  const dashAt = new Vector3();
+  const dashSize = new Vector3();
 
   /**
    * Lays one route's dashes along a path, in its own rhythm. The walk carries across
    * the corners rather than restarting at each one, so a bend does not produce two
    * dashes back to back, and it starts half a dash in so the route begins on ink.
    */
-  function layRoute(route: Route, path: THREE.Vector3[] | undefined): void {
+  function layRoute(route: Route, path: Vector3[] | undefined): void {
     if (!path) {
       route.mesh.count = 0;
       route.mesh.visible = false;
@@ -1521,14 +1558,14 @@ export function createFlowline3D(canvas: HTMLCanvasElement, initialModel: SceneM
       intersectionObserver?.disconnect();
       document.removeEventListener("visibilitychange", onVisibilityChange);
       scene.traverse((child) => {
-        const mesh = child as THREE.Mesh;
+        const mesh = child as Mesh;
         if (mesh.geometry) tracked.geometries.add(mesh.geometry);
         const material = mesh.material;
         if (Array.isArray(material)) material.forEach((item) => tracked.materials.add(item as TrackedMaterial));
         else if (material) tracked.materials.add(material as TrackedMaterial);
         // The floor markings hold a per-instance matrix buffer of their own, which
         // is not reached by disposing the geometry they share.
-        if (child instanceof THREE.InstancedMesh) child.dispose();
+        if (child instanceof InstancedMesh) child.dispose();
       });
       for (const geometry of tracked.geometries) geometry.dispose();
       for (const material of tracked.materials) material.dispose();

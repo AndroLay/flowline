@@ -4,9 +4,10 @@
 
 Flowline is a static, local-first React application. It has no backend, database, login, external API, analytics, or real-world side effect. The browser owns the authoritative game state for the current session.
 
-The package is self-contained on purpose: it builds, tests, and deploys on its own, with no
-dependency on a sibling project, a shared library, or any build step outside its own
-`package.json`.
+The package is self-contained on purpose: it builds and tests on its own, and produces a
+static bundle with a relative `base` that runs from any subpath, with no dependency on a
+sibling project, a shared library, or any build step outside its own `package.json`.
+Deployment is a separate, unfinished matter: as of 2026-09-03 no host serves this build.
 
 ## Layers
 
@@ -43,7 +44,7 @@ There are only `4! = 24` possible orders, which makes exhaustive deterministic r
 
 ### `src/tools/webmcp.ts`
 
-Registers six narrow tools when `document.modelContext` exists. The same dispatch path is used by native WebMCP and the local guide fallback, so the visible UI and tool result operate on one state object.
+Registers eight narrow tools when `document.modelContext` exists. The same dispatch path is used by native WebMCP and the local guide fallback, so the visible UI and tool result operate on one state object.
 
 Read/simulation tools may expose an audit focus and visible audit result, but they never commit a schedule. `stage_schedule` and `undo_schedule` create a pending proposal with an expected revision. Confirmation remains a React human action and is not exposed as a tool.
 
@@ -98,7 +99,7 @@ system but does not replace the semantic DOM surface.
 ### `tests/evals/`
 
 A local eval harness that scores the tool surface rather than a model. A solver is handed
-exactly what a WebMCP client is handed — the six names, sentences and schemas from
+exactly what a WebMCP client is handed — the eight names, sentences and schemas from
 `TOOL_SPECS`, and one `call` function — and nothing else: not the scenario, not the
 evaluator, not the fixture. Tasks are sentences a person would type, and they are scored on
 the board that results and on the trace the runtime wrote, never on the solver's wording, so
@@ -166,8 +167,30 @@ context are disposed at teardown. The opt-in `?flowline-capture=1` query is only
 local evidence aid that preserves the drawing buffer for screenshots; normal
 production rendering leaves that option disabled.
 
-The internal performance budget is measured separately from correctness. Current
-headless Chromium evidence meets the median-FPS and long-task targets, but desktop
-p95 frame time remains an environment-specific risk and is not presented as a
-release guarantee. A real-device/target-client run is still required before making
-a final Adopt decision for the 3D layer.
+The internal performance budget is measured separately from correctness. The current
+headless Chromium run — ANGLE/SwiftShader, no GPU, 1440 × 900 desktop and 390 × 844
+mobile — clears ten of its eleven budgets and still does **not** close the performance
+gate. The disposable floor becomes ready 264 ms after it is asked for on desktop and
+174 ms on mobile, inside the 1000 ms budget, and opening it blocks the main thread in two
+tasks whose longest is 114 ms on desktop and 80 ms on mobile, inside the budget of no
+single task over 200 ms. The failing budget is frame cadence while picks are being
+clicked: against a median of at least 55 FPS, the desktop sample reads 20.04 median FPS
+with a 150 ms worst frame, while the 390 px sample reads 59.88 FPS and is still not a
+phone result. With the floor open and idle both viewports read 59.88 FPS, but that figure
+measures a demand-driven loop that is drawing nothing — requestAnimationFrame cadence,
+not throughput. All of these are environment-specific software-rendering measurements and
+they bound nothing about real hardware in either direction.
+
+Those figures moved again against the previous run of the same surface, and the movement
+is run-to-run variance on a software rasteriser — **not a code fix and not a regression**.
+Nothing in the renderer changed across the runs; the two source edits behind them were one
+overlay heading sentence and the tool annotations. The floor-open task budget failed on the
+2026-09-02 five-window sample, whose long tasks ran 373–564 ms on every open, and passes
+here; the picks cadence has now read 30.03, then 29.94, then 20.04 median FPS twice — worst
+frame 116.7 ms and then 150 ms — across four samples of the same surface, and failed its
+budget on all four. The 2026-09-02 sampler also discarded intervals above 100 ms, so the
+samples are not directly comparable to begin with. Four software samples that answer three
+different ways cannot settle this gate, so it stays open and real-hardware
+behaviour stays unmeasured. A real-device run is required before making a final Adopt
+decision for the 3D layer; if the gate fails, the safe release choice is to simplify or
+defer 3D while keeping the 2.5D game playable.

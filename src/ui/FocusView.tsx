@@ -736,7 +736,9 @@ function buildPicks({ model, scenario, anchor, onFocus, selectRow }: {
       name: `Deadline D${model.deadlineSlot}`,
       lines: [
         `${critical.shortLabel} is the critical job and must finish by slot ${pad(model.deadlineSlot)}`,
-        `This plan finishes it at slot ${pad(endSlot(critical))} of ${pad(scenario.horizon)}`,
+        endSlot(critical) > scenario.horizon
+          ? `This plan finishes it at slot ${pad(endSlot(critical))}, past the ${pad(scenario.horizon)}-slot shift`
+          : `This plan finishes it at slot ${pad(endSlot(critical))} of ${pad(scenario.horizon)}`,
         `${VERDICT[critical.status]}${critical.tardiness ? ` by ${slots(critical.tardiness)}` : ""}`,
       ],
       action: `Click to focus ${critical.shortLabel}`,

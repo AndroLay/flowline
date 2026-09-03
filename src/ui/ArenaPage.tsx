@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { endSlot, formatSchedule, startSlot, type AgentFocus, type GameState, type JobId, type PlanRecommendation, type ScheduleAudit, type ScheduleEvaluation, type ToolEvent } from "../domain/model.ts";
+import { comparisonIsCurrent, criticalJob, endSlot, formatSchedule, startSlot, type AgentFocus, type GameState, type JobId, type PlanRecommendation, type Scenario, type ScheduleAudit, type ScheduleEvaluation, type ShiftResult, type ToolEvent } from "../domain/model.ts";
 import type { RegistrationSnapshot } from "../tools/webmcp.ts";
 import { PlanBoard, ScheduleTimeline, type ShiftMode } from "./PlanBoard.tsx";
 
@@ -36,6 +36,11 @@ export type ArenaProps = {
   onUndo: () => void;
   onDisruption: () => void;
   onRestart: () => void;
+  /** The campaign, in play order. Choosing one is human-only, like confirming a plan. */
+  shifts: readonly Scenario[];
+  onStartShift: (scenario: Scenario) => void;
+  onCloseShift: () => void;
+  onReviewShift: () => void;
   onReasonChange: (reason: string) => void;
   onPendingReasonChange: (reason: string) => void;
   onConfirm: () => void;
@@ -114,15 +119,16 @@ export function ArenaPage(props: ArenaProps) {
     </div>
   );
 }
-function ObjectiveRail({ state, evaluation }: ArenaProps) {
+function ObjectiveRail(props: ArenaProps) {
+  const { state, evaluation } = props;
   const [hint, setHint] = useState(false);
-  const critical = state.scenario.jobs.find((job) => job.priority === "critical") ?? state.scenario.jobs[0];
+  const critical = criticalJob(state.scenario);
   const run = evaluation.jobs.find((item) => item.jobId === critical.id);
   const late = run ? !run.onTime : false;
   return (
     <aside className="rail rail--objective">
       <section className="panel">
-        <header className="panel__kicker"><span className="micro">Scenario</span><b>01</b></header>
+        <header className="panel__kicker"><span className="micro">Scenario</span><b>{pad(state.scenario.order)}</b></header>
         <h2 className="panel__title">{state.scenario.title}</h2>
         <p>One shared schedule, read from two angles.</p>
       </section>
@@ -130,7 +136,7 @@ function ObjectiveRail({ state, evaluation }: ArenaProps) {
       <section className="panel">
         <span className="micro micro--mint">Objective</span>
         <h2 className="panel__display"><span>Make the</span><em>shift hold.</em></h2>
-        <p>Build the order, let the auditor expose the weak point, and decide what is worth protecting.</p>
+        <p>{state.scenario.objective}</p>
         {/* Named for what it does. It moves the keyboard into the first job of the queue,
             which is where a shift is actually built, and it is not a second door into a
             page the player is already standing on. */}
@@ -151,7 +157,11 @@ function ObjectiveRail({ state, evaluation }: ArenaProps) {
               duration, so it says so. */}
           <span className="tag">Dispatch {critical.dispatchDuration} slots</span>
         </div>
-        <p>Last dispatch of the shift. Missing the deadline voids the shift.</p>
+        <p>{critical.description} Missing the deadline voids the shift.</p>
+        {/* A shift can hold its critical job in intake for the first slots of the clock.
+            That is a constraint on the plan, not a detail, so it is stated where the
+            deadline is. */}
+        {critical.releaseAt > 0 && <p className="hint">Arrives in intake at slot {pad(critical.releaseAt + 1)} — nothing can prepare it before then.</p>}
         <div className={`deadline-box${late ? " is-late" : ""}`}>
           <span className="micro">Deadline</span>
           <strong>{critical.code} • D{critical.deadline}</strong>
@@ -169,18 +179,67 @@ function ObjectiveRail({ state, evaluation }: ArenaProps) {
             <path d="M12 3.5a5.5 5.5 0 0 1 3.3 9.9V17H8.7v-3.6A5.5 5.5 0 0 1 12 3.5Z" />
           </svg>
         </button>
-        {hint && <p className="hint">Parallel berths hide the queue. When one goes offline the same order makes the critical job wait too long.</p>}
+        {hint && <p className="hint">{state.scenario.lesson}</p>}
       </section>
+
+      <CampaignRail {...props} />
     </aside>
+  );
+}
+
+/**
+ * The campaign, and the one thing it is for: a player who has closed a shift can see there is
+ * another one, and what they got for the last. Every button here is a human's — `list_shifts`
+ * lets an agent read this exact rail and says so, but choosing what to work is not a tool call.
+ * The grade shown is the best card earned on that shift, so replaying cannot lower it.
+ */
+function CampaignRail({ state, shifts, onStartShift, onReviewShift }: ArenaProps) {
+  const ordered = [...shifts].sort((a, b) => a.order - b.order);
+  const best = (id: string) => state.results
+    .filter((result) => result.scenarioId === id)
+    .reduce<ShiftResult | undefined>((top, result) => (!top || result.score > top.score ? result : top), undefined);
+  return (
+    <section className="panel campaign">
+      <header className="panel__kicker">
+        <span className="micro">Campaign</span>
+        <b>{state.results.length} / {ordered.length}</b>
+      </header>
+      <ul className="campaign__list">
+        {ordered.map((shift) => {
+          const card = best(shift.id);
+          const current = shift.id === state.scenario.id;
+          return (
+            <li key={shift.id} className={current ? "is-current" : card ? "is-done" : ""}>
+              <b>{pad(shift.order)}</b>
+              <span>
+                <strong>{shift.title}</strong>
+                <small>{card ? `Grade ${card.grade} · ${card.objectivesMet}/${card.objectivesGraded} objectives` : current ? "In progress" : `${shift.jobs.length} jobs · ${shift.disruption.shortLabel}`}</small>
+              </span>
+              {current
+                ? <em aria-label="Current shift">●</em>
+                : <button type="button" onClick={() => onStartShift(shift)}>{card ? "Again" : "Start"}</button>}
+            </li>
+          );
+        })}
+      </ul>
+      {state.resultCard && (
+        <button className="btn btn--ghost btn--block" type="button" onClick={onReviewShift}>
+          See the result card<span aria-hidden="true">↗</span>
+        </button>
+      )}
+    </section>
   );
 }
 function AgentRail(props: ArenaProps) {
   const { state, audit, recommendation, registration, events } = props;
   const blocked = state.phase === "awaiting_review" || state.phase === "applied";
-  const critical = state.scenario.jobs.find((job) => job.priority === "critical") ?? state.scenario.jobs[0];
+  const critical = criticalJob(state.scenario);
   const stressRun = audit.stress.jobs.find((run) => run.jobId === critical.id);
   const proposedRun = recommendation?.audit.stress.jobs.find((run) => run.jobId === critical.id);
-  const canStage = (state.phase === "planning" || state.phase === "disrupted") && state.playerReason.trim().length >= 3 && !state.pendingProposal;
+  // The agent's proposal button is enabled only after the exact candidate has been
+  // compared at the current revision. The human review gate below has its own reason
+  // requirement and remains available for a player-authored order.
+  const canStage = (state.phase === "planning" || state.phase === "disrupted") && !state.pendingProposal && Boolean(recommendation) && comparisonIsCurrent(state);
   const canUndo = Boolean(state.activeReceipt?.action === "applied" && (state.phase === "applied" || state.phase === "disrupted") && !state.pendingProposal);
   const steps = [
     { n: 1, title: "Inspect", copy: "Read the board.", done: state.agentFocus !== "idle", run: props.onInspect, off: false },
@@ -198,7 +257,7 @@ function AgentRail(props: ArenaProps) {
       <section className="panel" aria-labelledby="auditor-title">
         <header className="panel__kicker">
           <span className="dot-label" id="auditor-title"><i />Operations auditor</span>
-          <span className="dot-label dot-label--mint"><i />{registration.phase === "registered" ? "Native" : "Ready"}</span>
+          <span className={`dot-label ${registration.phase === "registered" ? "dot-label--mint" : ""}`}><i />{registration.phase === "registered" ? (registration.provenance === "test-double" ? "Scripted" : "Registered") : registration.phase === "registering" ? "Registering" : registration.phase === "partial" ? "Partial" : "Local guide"}</span>
         </header>
         <ol className="steps">
           {steps.map((step) => (
@@ -251,7 +310,9 @@ function AgentRail(props: ArenaProps) {
       <details className="tools">
         <summary>
           <span className="micro">Agent tools</span>
-          <b>{registration.complete ? "6 / 6 native" : registration.available ? `${registration.registered.length} registered` : "Local guide"}</b>
+          {/* Counted from what the runtime reported, never from a number typed here: the
+              catalogue is built per shift, and a hardcoded total was already wrong once. */}
+          <b>{registration.available ? `${registration.registered.length} / ${registration.registered.length + registration.failed.length} registered` : "Local guide"}</b>
         </summary>
         <div className="tools__row">
           <button type="button" disabled={blocked} onClick={props.onFindBottleneck}>Find bottleneck</button>
@@ -292,23 +353,28 @@ function PersonIcon() {
  * — one claim, one human reason, one confirming button — so the boundary never
  * moves around on the player.
  */
-function DecisionGate({ state, onStage, onConfirm, onReject, onDisruption, onRestart, onUndo, onReasonChange, onPendingReasonChange }: ArenaProps) {
+function DecisionGate({ state, onStage, onConfirm, onReject, onDisruption, onRestart, onCloseShift, onReviewShift, onUndo, onReasonChange, onPendingReasonChange }: ArenaProps) {
   const pending = state.pendingProposal;
   const canUndo = Boolean(state.activeReceipt?.action === "applied" && (state.phase === "applied" || state.phase === "disrupted") && !pending);
   const recovered = state.phase === "disrupted" && state.activeReceipt?.shockApplied === true;
+  const closed = state.phase === "closed";
   const reason = pending ? pending.reason : state.playerReason;
   const needsReason = Boolean(pending) || state.phase === "planning" || (state.phase === "disrupted" && !recovered);
   const ready = reason.trim().length >= 3;
 
+  // Closing the shift is the last decision of the round and it belongs here, with the other
+  // one a tool cannot make. `review_shift` can read the card afterwards; nothing can write it.
   const primary = pending
     ? { label: pending.kind === "undo" ? "Confirm rollback" : "Confirm change", run: onConfirm, ready }
-    : state.phase === "planning"
-      ? { label: "Review the plan", run: onStage, ready }
-      : state.phase === "applied"
-        ? { label: "Start the shift", run: onDisruption, ready: true }
-        : recovered
-          ? { label: "Play another shift", run: onRestart, ready: true }
-          : { label: "Review recovery", run: onStage, ready };
+    : closed
+      ? { label: "See the result card", run: onReviewShift, ready: true }
+      : state.phase === "planning"
+        ? { label: "Review the plan", run: onStage, ready }
+        : state.phase === "applied"
+          ? { label: "Start the shift", run: onDisruption, ready: true }
+          : recovered
+            ? { label: "Close the shift", run: onCloseShift, ready: true }
+            : { label: "Review recovery", run: onStage, ready };
 
   // The page does not claim to know who chose a staged plan: the player's own "review"
   // button and the auditor's step 3 both arrive as the same tool call, so the copy states
@@ -317,11 +383,13 @@ function DecisionGate({ state, onStage, onConfirm, onReject, onDisruption, onRes
     ? pending.kind === "undo"
       ? "A return to the previous order is prepared. The board has not changed yet."
       : `Staged for review: ${formatSchedule(pending.schedule, state.scenario)}. Nothing moves until you confirm.`
-    : state.phase === "applied"
-      ? "Your plan is committed for the normal shift. Reveal the operating shock."
-      : recovered
-        ? "The revised order is on the floor. Compare the consequence, then run another shift."
-        : "Only you can confirm the change.";
+    : closed
+      ? "This shift is closed and its card is written. Read it, then pick the next shift."
+      : state.phase === "applied"
+        ? "Your plan is committed for the normal shift. Reveal the operating shock."
+        : recovered
+          ? "The revised order is on the floor. Close the shift to see what the plan achieved."
+          : "Only you can confirm the change.";
 
   return (
     <section className="gate" aria-labelledby="gate-title">
@@ -345,6 +413,7 @@ function DecisionGate({ state, onStage, onConfirm, onReject, onDisruption, onRes
       <div className="gate__aside">
         {pending && <button className="link-quiet" type="button" onClick={onReject}>Reject and keep planning</button>}
         {!pending && canUndo && <button className="link-quiet" type="button" onClick={onUndo}>Prepare exact undo</button>}
+        {closed && <button className="link-quiet" type="button" onClick={onRestart}>Replay this shift</button>}
         {state.activeReceipt && <span className="gate__receipt">{state.activeReceipt.id}</span>}
       </div>
       <small className="gate__note">This decision cannot be automated.</small>

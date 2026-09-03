@@ -20,7 +20,7 @@ ideas visible to a learner:
 
 The game turns that idea into a small, visual, exactly reproducible exercise. The player
 creates a schedule, the page-aware Operations Auditor exposes the causal failure,
-and the player decides whether a trade-off is worth accepting.
+and the player decides which plan to accept.
 
 ## What is adapted
 
@@ -32,7 +32,7 @@ the challenge implementation.
 | Work moving through local and remote processing resources | A job moving through `PREP BAY` and `DISPATCH BAY` | Makes staged work visible without requiring infrastructure knowledge |
 | Multiple stages with resource contention | One preparation lane followed by two dispatch berths | Shows why capacity and order affect downstream work |
 | Concurrent scheduling choices | The player orders four fictional jobs | Gives the player ownership of the decision instead of hiding it in an optimizer |
-| Throughput versus per-request latency/SLO | Completed jobs, makespan, waiting, idle time, and job deadlines | Exposes trade-offs with concrete before/after evidence |
+| Throughput versus per-request latency/SLO | Completed jobs, makespan, waiting, idle time, and job deadlines | Puts the one deadline that matters beside the throughput numbers, with a before/after the learner can recompute |
 | Idle “bubbles” caused by dependencies or contention | Visible idle gaps and queue waiting on the timeline | Connects an empty slot to a causal scheduling decision |
 | A scheduler operating under changing conditions | One deterministic berth-offline disruption after the initial plan | Lets the learner test robustness without random or opaque outcomes |
 
@@ -62,8 +62,9 @@ visually, recompute exactly, test exhaustively, and explain in a short judge pat
 
 That simplification is the point: the learner practices scheduling intuition
 before encountering the full complexity of an interactive systems challenge.
-Flowline teaches the underlying trade-off; it does not claim to teach the
-complete Huawei/Codeforces solution.
+Flowline teaches one consequence of that tension — a plan with no slack left on
+the deadline that matters is fragile when capacity changes — and does not claim
+to teach the complete Huawei/Codeforces solution.
 
 ## Educational purpose
 
@@ -74,7 +75,15 @@ basic scheduling intuition. After one round, the learner should be able to:
 2. identify a queue, bottleneck, or idle gap on a timeline;
 3. explain why a deadline can fail even when every job eventually completes;
 4. compare normal and disruption-tested outcomes;
-5. describe one trade-off behind a human-confirmed recovery.
+5. describe what a human-confirmed recovery protects, and what it spends.
+
+The fifth point has one exact answer in this fixture, and the honest version of it
+is not "robustness costs throughput": the robust order matches the default on every
+reported metric in the normal shift and beats it on every one of them under the
+disruption. What the reorder moves is where the slack sits — the `at-risk` marker
+travels from the critical Beacon to the flexible Relay. The measured table is in
+[`game-design.md`](./game-design.md#measured-outcome-of-the-fixture), and any copy
+about cost or robustness should agree with it.
 
 The measurable learning claim is deliberately narrow. Flowline does not claim to
 measure scheduling expertise, produce a universally fair answer, or replace a
@@ -94,7 +103,7 @@ the human-agent interaction that makes the lesson distinctive:
 6. the human reviews, edits, accepts, rejects, or undoes the decision.
 
 The agent is an Operations Auditor, not an answer key. The human still owns the
-objective and the final trade-off. Removing WebMCP would leave a small scheduling
+objective and the final decision. Removing WebMCP would leave a small scheduling
 game, but it would remove the page-aware audit, shared revision context, visible
 counterfactual, and agent-staged proposal that connect the learner's live plan to
 the explanation.
@@ -109,9 +118,10 @@ assets, or narrative.
 
 The correct description for a submission is therefore:
 
-> Flowline is an original WebMCP learning game that abstracts the core
-> throughput-versus-latency scheduling tension of the ICPC challenge into a
-> two-station, disruption-tested human-agent exercise.
+> Flowline is an original WebMCP learning game that abstracts one idea from the
+> ICPC challenge — a plan with no slack left on the deadline that matters is
+> fragile when a constrained resource changes — into a two-station,
+> disruption-tested human-agent exercise.
 
 It should not be described as a faithful simulator, official companion, solver,
 or benchmark for the Huawei/Codeforces challenge.

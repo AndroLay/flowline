@@ -2,7 +2,7 @@
  * A local eval harness that scores the tool surface rather than a model.
  *
  * The claim it exists to support is narrow and checkable: an agent that sees only what a
- * WebMCP client sees — six names, six sentences, six schemas, and whatever the results
+ * WebMCP client sees — the names, the sentences, the schemas, and whatever the results
  * say — can read this board, find the risk, and put a fix in front of a human without
  * ever committing one itself. Nothing here calls a model, so the numbers reproduce on a
  * laptop with no key and no network, and nothing is scored on wording: a task is scored on
@@ -14,7 +14,7 @@
  * a staged plan only counts when the same run had already compared it. An eval that let
  * the answer arrive from anywhere else would be measuring the fixture, not the surface.
  */
-import { scenario } from "../../src/data/fixtures.ts";
+import { scenario, shifts } from "../../src/data/fixtures.ts";
 import {
   auditSchedule,
   confirmPending,
@@ -25,7 +25,7 @@ import {
   type Schedule,
   type ToolEvent,
 } from "../../src/domain/model.ts";
-import { createFlowlineRuntime, TOOL_SPECS, type ToolResult, type ToolSpec } from "../../src/tools/webmcp.ts";
+import { createFlowlineRuntime, type ToolResult, type ToolSpec } from "../../src/tools/webmcp.ts";
 
 /** Exactly what a WebMCP client is offered. A solver may read this and nothing else. */
 export type SolverTools = {
@@ -150,6 +150,8 @@ export async function runEval(task: EvalTask, solver: Solver): Promise<EvalRun> 
     readState: () => state,
     writeState: (next) => { state = next; },
     emit: (event) => { trace.push({ ...event, id: `eval-${trace.length + 1}`, at: "1970-01-01T00:00:00.000Z" }); },
+    readEvents: () => trace,
+    shifts,
   });
 
   const call: SolverTools["call"] = async (name, input = {}) => {
@@ -175,7 +177,9 @@ export async function runEval(task: EvalTask, solver: Solver): Promise<EvalRun> 
   };
 
   // The solver sees the catalogue and the call, and never the module that knows the answer.
-  await solver.run(task.goal, { catalogue: TOOL_SPECS, call });
+  // The catalogue the runtime actually registered, so a solver never reads a schema
+  // for a shift other than the one the board is running.
+  await solver.run(task.goal, { catalogue: runtime.catalogue, call });
   await runtime.cleanup();
 
   let human: EvalBoard["human"] = "not asked";

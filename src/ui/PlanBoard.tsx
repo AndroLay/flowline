@@ -1,6 +1,6 @@
 import type { CSSProperties, DragEvent } from "react";
 import { useState } from "react";
-import { endSlot, getJob, slots, slotWindow, type JobId, type JobVerdict, type Scenario, type Schedule, type ScheduleEvaluation } from "../domain/model.ts";
+import { criticalJob, endSlot, getJob, slots, slotWindow, type JobId, type JobVerdict, type Scenario, type Schedule, type ScheduleEvaluation } from "../domain/model.ts";
 import { floorPlacements, type SceneSite } from "../visual/scene-model.ts";
 import { tipSentence, useTip, type TipBinder, type TipContent } from "./Tip.tsx";
 
@@ -47,6 +47,11 @@ function jobTip({ job, run, index, tag, queueLength, action }: {
     state: run.verdict,
     lines: [
       `Queue ${pad(index + 1)}${queueLength ? ` of ${pad(queueLength)}` : ""} · ${job.priority}`,
+      // Only said when there is something to say. On a shift where everything is already on
+      // the floor this line would be four words meaning "nothing happened".
+      ...(run.releaseAt > 0 || run.intakeWait > 0
+        ? [`Intake slot ${pad(run.releaseAt + 1)}${run.intakeWait > 0 ? ` · then waits ${slots(run.intakeWait)} for prep` : ""}`]
+        : []),
       `Prep slots ${slotWindow(run.prepStart, run.prepEnd)}`,
       `Dispatch slots ${slotWindow(run.dispatchStart, run.dispatchEnd)} · berth ${pad(run.dispatchLane + 1)}`,
       `Waits ${slots(run.waiting)} · finishes slot ${pad(endSlot(run))}`,
@@ -151,9 +156,22 @@ function QueueOrder({ scenario, schedule, evaluation, editable, selectedJobId, o
     onReorder?.(from, to);
   }
 
+  const staggered = scenario.jobs.some((job) => job.releaseAt > 0);
+  const starved = evaluation.metrics.prepStarved;
+  const queued = evaluation.metrics.totalIntakeWait;
+
   return (
     <div className="queue">
       <span className="micro">Queue order</span>
+      {/* Said once, above the chips, and only on a shift that has an intake queue. The badge
+          on a chip gives the slot; this gives the consequence of the order as a whole, which
+          is the number the player is actually trying to move. */}
+      {staggered && (
+        <p className="queue__intake-note">
+          <b>Intake</b> releases work mid-shift: a chip marked <i>S05</i> cannot enter prep before slot 5.
+          {" "}This order leaves the crew idle for {slots(starved)} and holds arrived work for {slots(queued)}.
+        </p>
+      )}
       <ol className="queue__list">
         {schedule.map((jobId, index) => {
           const job = getJob(scenario, jobId);
@@ -211,6 +229,14 @@ function QueueOrder({ scenario, schedule, evaluation, editable, selectedJobId, o
               >
                 {job.shortLabel}
               </button>
+              {/* The arrival slot, on the chip that cannot move before it. Marked on the job
+                  rather than only in the tooltip: the constraint has to be visible while the
+                  player is dragging, which is exactly when a tooltip is not open. */}
+              {job.releaseAt > 0 && (
+                <span className="queue__intake" title={`${job.label} arrives at slot ${pad(job.releaseAt + 1)}`}>
+                  S{pad(job.releaseAt + 1)}
+                </span>
+              )}
               {drags && onReorder && (
                 <span className="queue__move">
                   <button type="button" disabled={index === 0} onClick={() => onReorder(index, index - 1)} aria-label={`Move ${job.label} earlier in the queue`}>◂</button>
@@ -452,7 +478,13 @@ export function ScheduleTimeline({ scenario, evaluation, compare, dense = false,
   selectedRowId?: JobId;
 }) {
   const horizon = scenario.horizon;
-  const critical = scenario.jobs.find((job) => job.priority === "critical") ?? scenario.jobs[0];
+  // The horizon is the shift's window, not a limit on the plan: a bad order can run past the
+  // end of the shift, and on two of the three shifts it can run well past it. The ruler is
+  // therefore as long as the longest plan on it — the shift's own plan and any ghost sharing
+  // the strip — and the columns beyond the horizon are marked as overtime rather than drawn
+  // outside the grid, which is what a fixed `repeat(horizon)` did.
+  const columns = Math.max(horizon, evaluation.metrics.makespan, compare?.metrics.makespan ?? 0);
+  const critical = criticalJob(scenario);
   const criticalRun = evaluation.jobs.find((run) => run.jobId === critical.id);
   const onTime = criticalRun?.onTime ?? true;
   const rows = timelineRows(scenario, evaluation, rowKind, dense, compare);
@@ -466,11 +498,11 @@ export function ScheduleTimeline({ scenario, evaluation, compare, dense = false,
 
       <div
         className="tl__grid"
-        style={{ gridTemplateColumns: `var(--tl-label) repeat(${horizon}, minmax(0, 1fr))`, "--slots": horizon } as CSSProperties}
+        style={{ gridTemplateColumns: `var(--tl-label) repeat(${columns}, minmax(0, 1fr))`, "--slots": columns } as CSSProperties}
       >
-        {Array.from({ length: horizon }, (_, index) => index + 1).map((slot) => (
+        {Array.from({ length: columns }, (_, index) => index + 1).map((slot) => (
           <span
-            className={`tl__tick${slot === critical.deadline ? " is-deadline" : ""}`}
+            className={`tl__tick${slot === critical.deadline ? " is-deadline" : ""}${slot > horizon ? " is-overtime" : ""}`}
             key={slot}
             style={{ gridColumn: slot + 1, gridRow: 1 }}
             {...tipProps(slotTip({ scenario, evaluation, slot, deadline: critical.deadline, critical: critical.shortLabel }))}
@@ -495,7 +527,7 @@ export function ScheduleTimeline({ scenario, evaluation, compare, dense = false,
             className={`tl__lane${row.jobId && row.jobId === selectedRowId ? " is-on" : ""}`}
             key={`${row.key}-lane`}
             aria-hidden="true"
-            style={{ gridColumn: `2 / span ${horizon}`, gridRow: rowIndex + 2 }}
+            style={{ gridColumn: `2 / span ${columns}`, gridRow: rowIndex + 2 }}
           />,
           ...row.bars.map(({ run, stage, ghost: ghostBar }) => {
             const job = getJob(scenario, run.jobId);
@@ -518,7 +550,9 @@ export function ScheduleTimeline({ scenario, evaluation, compare, dense = false,
                   name: `${job.shortLabel} · ${ghostBar ? "ghost dispatch" : stage === "prep" ? "prep" : "dispatch"}`,
                   state: verdict,
                   lines: [
-                    `Slots ${slotWindow(start, end)} of ${pad(horizon)}`,
+                    end > horizon
+                      ? `Slots ${slotWindow(start, end)} · runs past the ${pad(horizon)}-slot shift`
+                      : `Slots ${slotWindow(start, end)} of ${pad(horizon)}`,
                     stage === "prep"
                       ? `Prep runs ${slots(end - start)} in one lane`
                       : `Berth ${pad(run.dispatchLane + 1)} · waits ${slots(run.waiting)} first`,
@@ -571,7 +605,9 @@ function slotTip({ scenario, evaluation, slot, deadline, critical }: {
   const prepping = evaluation.jobs.filter((run) => run.prepStart < slot && slot <= run.prepEnd);
   const dispatching = evaluation.jobs.filter((run) => run.dispatchStart < slot && slot <= run.dispatchEnd);
   return {
-    name: `Slot ${pad(slot)} of ${pad(scenario.horizon)}`,
+    name: slot > scenario.horizon
+      ? `Slot ${pad(slot)} · past the shift`
+      : `Slot ${pad(slot)} of ${pad(scenario.horizon)}`,
     state: slot === deadline ? "deadline" : undefined,
     lines: [
       `Prep · ${prepping.length ? prepping.map(short).join(", ") : "idle"}`,

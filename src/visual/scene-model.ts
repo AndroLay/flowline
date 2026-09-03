@@ -1,4 +1,5 @@
 import {
+  availableActions,
   comparisonIsCurrent,
   getJob,
   type FocusSource,
@@ -391,12 +392,6 @@ export function deriveSceneModel(state: GameState, evaluation: ScheduleEvaluatio
       dispatchIdle: evaluation.metrics.dispatchIdle,
       criticalOnTime: evaluation.metrics.criticalOnTime,
     },
-    availableActions: state.pendingProposal
-      ? ["review proposal", "confirm (human)", "reject"]
-      : state.phase === "planning" || state.phase === "disrupted"
-        ? ["inspect", "find bottleneck", "stress-test", "compare", "stage"]
-        : state.phase === "applied"
-          ? ["reveal disruption", "prepare undo"]
-          : ["inspect board"],
+    availableActions: availableActions(state),
   };
 }

@@ -24,13 +24,16 @@
   --coral: #ea6455;
   --blue: #2f7ac1;
 
-  /* Identity. Which job this is — never how it is doing. They are all cool and all light
-     so a job can never be mistaken for a verdict: the closest of them sits 45 ΔE from mint
-     and 92 from coral, where the old palette put three jobs at 0 from a verdict colour. */
+  /* Identity. Which job this is — never how it is doing. They are all light so a job can
+     never be mistaken for a verdict: the closest of them sits 45 ΔE76 from mint and 58 from
+     coral, where the old palette put three jobs at 0 from a verdict colour. Quartz is the
+     fifth, added when a shift first carried five jobs; it is the one that comes nearest
+     coral, and 58 is still more than twice the 24 that separates violet from cobalt. */
   --ice: #ccd6ff;
   --azure: #5cb8ee;
   --violet: #b585f2;
   --cobalt: #6f8bea;
+  --quartz: #e9a6dd;
 
   --r-lg: 10px;
   --r-md: 8px;
@@ -350,6 +353,14 @@ a {
 .btn--block.btn--lg {
   padding-left: 18px;
   padding-right: 18px;
+}
+
+/* The size a button takes when it stands inside a row of text rather than under a
+   paragraph: the card's copy control and the per-shift starts on the result page. */
+.btn--sm {
+  padding: 7px 10px;
+  font-size: 10px;
+  letter-spacing: 0.09em;
 }
 
 .link-quiet {
@@ -933,6 +944,248 @@ a {
   border-top: 1px solid var(--line);
 }
 
+/* --- result card ---------------------------------------------------------- */
+
+/* The card is the one page a stranger reads, so it is taller than the guide and scrolls
+   inside itself rather than pushing its own footer off the viewport: the two buttons that
+   choose the next shift have to stay reachable at 900px. */
+.card {
+  width: min(820px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.card__verdict {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgb(255 255 255 / 0.02);
+}
+
+/* The grade at display size. It is the only number on the card drawn large, and it takes the
+   verdict palette the board already legends — gold for a shift that held with something
+   missing, coral for one that did not. */
+.card__grade {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.card__grade--a {
+  color: var(--mint);
+}
+
+.card__grade--b,
+.card__grade--c {
+  color: var(--gold);
+}
+
+.card__grade--d {
+  color: var(--coral);
+}
+
+.card__verdict strong {
+  display: block;
+  font-size: 14px;
+}
+
+.card__verdict p {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.card__verdict i {
+  font-family: var(--mono);
+  font-style: normal;
+  color: var(--ink);
+}
+
+.card__figures {
+  display: flex;
+  gap: 18px;
+}
+
+.card__figures dt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.card__figures dd {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--ink);
+}
+
+/* The two costed columns read as label-and-figure rows rather than a strip, because there
+   are four of each and they are compared down the column, not across it. */
+.card__figures--stack {
+  display: grid;
+  gap: 5px;
+}
+
+.card__figures--stack > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dotted var(--line);
+  padding-bottom: 4px;
+}
+
+.card__figures--stack dd {
+  font-size: 12.5px;
+}
+
+/* Met, missed, and reported-but-not-graded. Three marks, because a card that drew the
+   ungraded line like a failure would be claiming the player lost something they never
+   could — that row is there to state the boundary held, and it always does. */
+.card__objectives {
+  display: grid;
+  gap: 7px;
+}
+
+.card__objectives li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgb(255 255 255 / 0.02);
+}
+
+.card__objectives i {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.card__objectives .is-met i {
+  color: var(--mint);
+}
+
+.card__objectives .is-missed i {
+  color: var(--coral);
+}
+
+.card__objectives .is-missed {
+  border-color: rgb(234 100 85 / 0.35);
+}
+
+.card__objectives strong {
+  display: block;
+  font-size: 13px;
+}
+
+.card__objectives p {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.card__lesson {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border-left: 2px solid var(--mint);
+  background: rgb(110 227 207 / 0.05);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.card__share {
+  display: grid;
+  gap: 8px;
+}
+
+.card__share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Monospace, selectable, and scrollable rather than wrapped: these six lines are pasted
+   somewhere else, so a soft wrap here would be a line break the player did not write. */
+.card__text {
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgb(1 12 20 / 0.55);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.card__rail {
+  display: grid;
+  gap: 8px;
+}
+
+.card__rail ul {
+  display: grid;
+  gap: 6px;
+}
+
+.card__rail li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.card__rail li.is-current {
+  border-color: var(--line-2);
+  background: rgb(255 255 255 / 0.03);
+}
+
+.card__rail b {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.card__rail li.is-done b {
+  color: var(--mint);
+}
+
+.card__rail span {
+  font-size: 13px;
+}
+
+.card__rail em {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
 /* --- popups --------------------------------------------------------------- */
 
 /* One panel serves every surface, delivered to the body so no ancestor can clip it:
@@ -1046,6 +1299,29 @@ a {
 
   .modal__cols {
     grid-template-columns: 1fr;
+  }
+
+  /* Narrow, the card's three-across verdict and four-across shift rows stack: the grade and
+     the sentence stay together, the figures move under them, and the per-shift button keeps
+     its own row rather than squeezing the title into two characters. */
+  .card__verdict {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .card__figures {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+
+  .card__rail li {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 6px;
+  }
+
+  .card__rail em,
+  .card__rail li > button {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 

@@ -1,12 +1,19 @@
 import { scenario as defaultScenario } from "../data/fixtures.ts";
 
-export type JobId = "pantry" | "archive" | "beacon" | "relay";
+/**
+ * A job's identity, validated against the shift it belongs to rather than against a closed
+ * union. There is more than one shift now, and each brings its own jobs, so a union here
+ * would have to list every job in the game and would still not say which shift a given id
+ * is legal in. `validateSchedule` answers that question from `scenario.jobs`, which is the
+ * only list that can be right.
+ */
+export type JobId = string;
 export type StationId = "prep" | "dispatch";
 /** Which job this is. Never how it is doing — that is a verdict, and it has its own three. */
-export type JobTint = "ice" | "azure" | "violet" | "cobalt";
+export type JobTint = "ice" | "azure" | "violet" | "cobalt" | "quartz";
 export type JobPriority = "critical" | "standard";
 export type Schedule = JobId[];
-export type Phase = "setup" | "planning" | "awaiting_review" | "applied" | "disrupted";
+export type Phase = "setup" | "planning" | "awaiting_review" | "applied" | "disrupted" | "closed";
 export type AgentFocus = "idle" | "inspected" | "bottleneck" | "simulation" | "proposal" | "incident" | "recovery";
 export type FocusSource = "player" | "agent" | "system";
 
@@ -34,6 +41,13 @@ export type Job = {
   prepDuration: number;
   dispatchDuration: number;
   deadline: number;
+  /**
+   * The slot the job is available from, on the same clock as every other reading here.
+   * Zero means it is on the floor when the shift opens. Anything higher means it is still
+   * in intake, and prep cannot start it early however the order is arranged — which is what
+   * makes a queue a constraint rather than a list.
+   */
+  releaseAt: number;
   priority: JobPriority;
   tint: JobTint;
 };
@@ -46,20 +60,41 @@ export type Station = {
   parallelism: number;
 };
 
+/**
+ * The one thing that goes wrong in a shift. `dispatchParallelism` is the capacity left
+ * after it lands, and `releaseDelays` pushes named jobs later into intake — so a shift can
+ * lose a berth, or have a supplier arrive late, or both, without the evaluator growing a
+ * second notion of what a shock is.
+ */
 export type Disruption = {
   id: string;
   label: string;
   shortLabel: string;
   description: string;
+  /**
+   * The shock as a verb phrase, so a sentence can say "once <clause> lands". The findings
+   * are quoted verbatim by the audit rail, the tool responses and the result card, and a
+   * shift whose shock is a late arrival cannot borrow the sentence written for a lost berth.
+   */
+  clause: string;
   dispatchParallelism: number;
+  releaseDelays?: { jobId: JobId; slots: number }[];
 };
 
+/**
+ * One shift: its floor, its jobs, its intake, and the single thing that goes wrong in it.
+ * `order` is the position in the campaign, and `lesson` is the sentence the result card
+ * checks the player against — kept on the shift rather than in the UI so a new shift cannot
+ * be added without saying what it is supposed to teach.
+ */
 export type Scenario = {
   id: string;
+  order: number;
   title: string;
   subtitle: string;
   brief: string;
   objective: string;
+  lesson: string;
   horizon: number;
   constraints: string[];
   stations: Station[];
@@ -78,6 +113,10 @@ export type JobVerdict = "on-time" | "at-risk" | "missed";
 
 export type JobRun = {
   jobId: JobId;
+  /** The slot the job became available, after any disruption delay. */
+  releaseAt: number;
+  /** Slots the job spent in intake because prep was busy when it arrived. */
+  intakeWait: number;
   prepStart: number;
   prepEnd: number;
   dispatchStart: number;
@@ -96,6 +135,10 @@ export type ScheduleMetrics = {
   tardyJobs: number;
   makespan: number;
   totalWaiting: number;
+  /** Slots jobs spent queued in intake, waiting for a prep crew that was already busy. */
+  totalIntakeWait: number;
+  /** Prep capacity the plan cannot use because the next job has not arrived yet. */
+  prepStarved: number;
   dispatchIdle: number;
   criticalOnTime: boolean;
   criticalTardiness: number;
@@ -183,6 +226,53 @@ export type ToolEvent = {
   at: string;
 };
 
+/**
+ * One line of the shift report: a thing the shift asked for, whether the closed board did
+ * it, and the number that decides it. Every objective is derived from the final evaluation
+ * or from the trace — none is scored by opinion, and none of them scores the sentence the
+ * player wrote, because the game does not mark comprehension.
+ */
+export type ShiftObjective = {
+  id: string;
+  label: string;
+  met: boolean;
+  detail: string;
+  /** False for objectives the design guarantees; those are reported, not graded. */
+  graded: boolean;
+};
+
+export type ShiftGrade = "A" | "B" | "C" | "D";
+
+/**
+ * The result card. It reports the board that was closed and the division of labour that
+ * produced it: how many calls an agent made, how many the runtime refused, and how many
+ * times a human clicked confirm. The last of those is the number the whole package is
+ * about, so it is on the card rather than in a doc.
+ */
+export type ShiftResult = {
+  scenarioId: string;
+  scenarioTitle: string;
+  shiftOrder: number;
+  grade: ShiftGrade;
+  score: number;
+  objectivesMet: number;
+  objectivesGraded: number;
+  finalSchedule: Schedule;
+  evaluation: ScheduleEvaluation;
+  objectives: ShiftObjective[];
+  activity: {
+    revisions: number;
+    humanConfirmations: number;
+    toolCalls: number;
+    toolRefusals: number;
+    rollbacksPrepared: number;
+    reasonsWritten: number;
+  };
+  lesson: string;
+  /** The card as plain text, so a player can paste what they achieved somewhere else. */
+  summary: string[];
+};
+
 export type GameState = {
   scenario: Scenario;
   roundNumber: number;
@@ -198,17 +288,47 @@ export type GameState = {
   receipts: Receipt[];
   agentFocus: AgentFocus;
   focus: FocusTarget;
+  /** The card for the shift currently closed, if it has been closed. */
+  resultCard?: ShiftResult;
+  /** Every card earned in this session, oldest first. Cleared by nothing. */
+  results: ShiftResult[];
 };
 
 export type DomainError = {
-  code: "invalid_input" | "precondition_failed" | "stale_revision" | "pending_proposal" | "invalid_schedule" | "no_active_receipt" | "proposal_not_found";
+  code: "invalid_input" | "precondition_failed" | "stale_revision" | "pending_proposal" | "invalid_schedule" | "no_active_receipt" | "proposal_not_found" | "shift_not_closed";
   message: string;
   details?: Record<string, unknown>;
 };
 
 export type Transition<T = GameState> = { ok: true; state: T } | { ok: false; error: DomainError };
 
-const JOB_IDS: JobId[] = ["pantry", "archive", "beacon", "relay"];
+/**
+ * The actions the current state can honestly expose to a client. This is deliberately
+ * derived from the same phase and proposal guards the transitions use; the scene model
+ * and semantic tool responses must not grow their own, optimistic action list.
+ *
+ * Human actions are named explicitly. There is intentionally no `confirm` tool: a
+ * WebMCP client can prepare a proposal, but only the page owner can commit it.
+ */
+export function availableActions(state: Pick<GameState, "phase" | "pendingProposal">): string[] {
+  if (state.pendingProposal) return ["review proposal (human)", "confirm (human)", "reject (human)"];
+  switch (state.phase) {
+    case "setup":
+      return ["list_shifts", "enter arena (human)", "choose shift (human)"];
+    case "planning":
+      return ["inspect_board", "list_shifts", "find_bottleneck", "simulate_disruption", "compare_plans", "stage_schedule", "reorder (human)"];
+    case "applied":
+      return ["inspect_board", "list_shifts", "find_bottleneck", "simulate_disruption", "undo_schedule", "reveal disruption (human)"];
+    case "disrupted":
+      return ["inspect_board", "list_shifts", "find_bottleneck", "simulate_disruption", "compare_plans", "stage_schedule", "undo_schedule", "reorder (human)", "close shift (human)"];
+    case "closed":
+      return ["inspect_board", "list_shifts", "review_shift", "next shift (human)", "replay shift (human)"];
+    case "awaiting_review":
+      // A pending proposal is handled above. This branch is defensive for malformed
+      // host state, and is safer than suggesting a mutation that would be refused.
+      return ["review proposal (human)"];
+  }
+}
 
 export function cloneSchedule(schedule: Schedule): Schedule {
   return [...schedule];
@@ -216,6 +336,51 @@ export function cloneSchedule(schedule: Schedule): Schedule {
 
 export function getJob(scenario: Scenario, jobId: JobId): Job {
   return scenario.jobs.find((job) => job.id === jobId)!;
+}
+
+/**
+ * The one job whose deadline the shift is graded on. Every shift declares exactly one, and
+ * five surfaces used to re-find it by hand — the audit, the recommender, the opening focus,
+ * the shock focus and the card — which is five chances for one of them to disagree about
+ * what the round is about.
+ */
+export function criticalJob(scenario: Scenario): Job {
+  return scenario.jobs.find((job) => job.priority === "critical") ?? scenario.jobs[0];
+}
+
+/** The berths the shift starts with, before anything goes wrong. */
+export function dispatchBerths(scenario: Scenario): number {
+  return scenario.stations.find((station) => station.id === "dispatch")!.parallelism;
+}
+
+/**
+ * The evaluator options for one shift under one condition. A disruption may take berths
+ * away, delay arrivals, or both, and every surface that evaluates a plan — the board, the
+ * audit, a receipt, the card, five tool handlers — has to apply exactly the same pair or it
+ * will report a different board than the one the player is looking at. One shift built the
+ * options by hand on each surface and its late arrival reached only the audit; this is the
+ * one place that decides, so a shift cannot be half-shocked again.
+ */
+export function shiftOptions(
+  scenario: Scenario,
+  shocked: boolean,
+): { dispatchParallelism: number; releaseDelays?: { jobId: JobId; slots: number }[] } {
+  if (!shocked) return { dispatchParallelism: dispatchBerths(scenario) };
+  return {
+    dispatchParallelism: scenario.disruption.dispatchParallelism,
+    releaseDelays: scenario.disruption.releaseDelays,
+  };
+}
+
+/**
+ * The jobs still in intake at a given point on the clock, front of the queue first. The
+ * intake rail draws this, `inspect_board` reports it, and the evaluator honours the same
+ * `releaseAt` it reads — one arrival time, three readers.
+ */
+export function intakeAt(scenario: Scenario, schedule: Schedule, clock: number): Job[] {
+  return schedule
+    .map((jobId) => getJob(scenario, jobId))
+    .filter((job) => job.releaseAt > clock);
 }
 
 export function formatSchedule(schedule: Schedule, scenario: Scenario): string {
@@ -250,10 +415,17 @@ export function slotWindow(fromClock: number, toClock: number): string {
 }
 
 export function validateSchedule(scenario: Scenario, schedule: Schedule): Transition<Schedule> {
-  if (schedule.length !== JOB_IDS.length || schedule.some((jobId) => !JOB_IDS.includes(jobId))) {
-    return { ok: false, error: { code: "invalid_schedule", message: "The schedule must contain all four known jobs." } };
+  const scenarioJobIds = scenario.jobs.map((job) => job.id);
+  if (schedule.length !== scenarioJobIds.length || schedule.some((jobId) => !scenarioJobIds.includes(jobId))) {
+    return {
+      ok: false,
+      error: {
+        code: "invalid_schedule",
+        message: `The schedule must contain all ${scenarioJobIds.length} jobs on this shift: ${scenarioJobIds.join(", ")}.`,
+      },
+    };
   }
-  if (new Set(schedule).size !== JOB_IDS.length) {
+  if (new Set(schedule).size !== scenarioJobIds.length) {
     return { ok: false, error: { code: "invalid_schedule", message: "A job can appear only once in the schedule." } };
   }
   return { ok: true, state: cloneSchedule(schedule) };
@@ -274,19 +446,36 @@ export function jobVerdict(run: { dispatchEnd: number }, job: { deadline: number
   return run.dispatchEnd === job.deadline ? "at-risk" : "on-time";
 }
 
+/**
+ * The whole simulator. Jobs pass through prep in the order given and then take the first
+ * dispatch berth that frees up, and a job cannot enter prep before it has arrived — which is
+ * the only reason the order of the queue is a decision rather than a preference.
+ *
+ * `releaseDelays` is how a disruption reaches intake: the shock is applied to the arrival
+ * time here rather than baked into the fixture, so the same shift can be read under normal
+ * intake and under a late supplier without keeping two copies of its jobs.
+ */
 export function evaluateSchedule(
   scenario: Scenario,
   schedule: Schedule,
-  options: { dispatchParallelism?: number } = {},
+  options: { dispatchParallelism?: number; releaseDelays?: { jobId: JobId; slots: number }[] } = {},
 ): ScheduleEvaluation {
-  const dispatchParallelism = options.dispatchParallelism ?? scenario.stations.find((station) => station.id === "dispatch")!.parallelism;
+  const dispatchParallelism = options.dispatchParallelism ?? dispatchBerths(scenario);
+  const delays = new Map((options.releaseDelays ?? []).map((delay) => [delay.jobId, delay.slots]));
   const laneAvailable = Array.from({ length: dispatchParallelism }, () => 0);
   const jobs: JobRun[] = [];
   let prepCursor = 0;
+  let prepStarved = 0;
 
   for (const jobId of schedule) {
     const job = getJob(scenario, jobId);
-    const prepStart = prepCursor;
+    const releaseAt = job.releaseAt + (delays.get(job.id) ?? 0);
+    // Two different kinds of idleness, and they are not the same reading: a job that arrived
+    // while prep was busy queues in intake, and a prep crew with nothing to start is starved
+    // by the queue rather than by the plan.
+    const intakeWait = Math.max(0, prepCursor - releaseAt);
+    prepStarved += Math.max(0, releaseAt - prepCursor);
+    const prepStart = Math.max(prepCursor, releaseAt);
     const prepEnd = prepStart + job.prepDuration;
     prepCursor = prepEnd;
 
@@ -299,6 +488,8 @@ export function evaluateSchedule(
     laneAvailable[dispatchLane] = dispatchEnd;
     jobs.push({
       jobId,
+      releaseAt,
+      intakeWait,
       prepStart,
       prepEnd,
       dispatchStart,
@@ -316,6 +507,7 @@ export function evaluateSchedule(
   const tardyJobs = jobs.length - onTimeJobs;
   const makespan = Math.max(...jobs.map((run) => run.dispatchEnd), 0);
   const totalWaiting = jobs.reduce((total, run) => total + run.waiting, 0);
+  const totalIntakeWait = jobs.reduce((total, run) => total + run.intakeWait, 0);
   const dispatchBusy = jobs.reduce((total, run) => total + getJob(scenario, run.jobId).dispatchDuration, 0);
   // Idle is the dispatch capacity the plan never uses: every berth offers one slot
   // per slot of the horizon, and the plan spends dispatchBusy of them. Waiting time
@@ -327,7 +519,16 @@ export function evaluateSchedule(
   const risk = !criticalOnTime ? "critical" : tardyJobs > 0 ? "watch" : "clear";
   const score = Math.max(
     0,
-    Math.min(100, Math.round(onTimeJobs * 20 + (criticalOnTime ? 20 : 0) + Math.max(0, scenario.horizon - makespan) * 2 - totalWaiting)),
+    Math.min(
+      100,
+      Math.round(
+        onTimeJobs * 20
+        + (criticalOnTime ? 20 : 0)
+        + Math.max(0, scenario.horizon - makespan) * 2
+        - totalWaiting
+        - totalIntakeWait,
+      ),
+    ),
   );
   const prepBusy = scenario.jobs.reduce((total, job) => total + job.prepDuration, 0);
   const prepUtilization = prepBusy / scenario.horizon;
@@ -343,6 +544,8 @@ export function evaluateSchedule(
       tardyJobs,
       makespan,
       totalWaiting,
+      totalIntakeWait,
+      prepStarved,
       dispatchIdle,
       criticalOnTime,
       criticalTardiness: criticalRun.tardiness,
@@ -370,27 +573,30 @@ export function slots(count: number): string {
  * evaluation it was derived from says otherwise.
  */
 export function auditSchedule(scenario: Scenario, schedule: Schedule): ScheduleAudit {
-  const baseline = evaluateSchedule(scenario, schedule, { dispatchParallelism: 2 });
-  const stress = evaluateSchedule(scenario, schedule, { dispatchParallelism: scenario.disruption.dispatchParallelism });
-  const criticalJob = scenario.jobs.find((job) => job.priority === "critical")!;
+  const baseline = evaluateSchedule(scenario, schedule, shiftOptions(scenario, false));
+  const stress = evaluateSchedule(scenario, schedule, shiftOptions(scenario, true));
+  const critical = criticalJob(scenario);
   const addedTardy = stress.metrics.tardyJobs - baseline.metrics.tardyJobs;
-  let finding = `${criticalJob.shortLabel} stays on time under both conditions, and no other job misses its deadline.`;
+  // The shock is named by the shift, because losing a berth and losing an arrival are not
+  // the same sentence and the finding is quoted verbatim on three surfaces.
+  const shock = scenario.disruption.clause;
+  let finding = `${critical.shortLabel} stays on time under both conditions, and no other job misses its deadline.`;
   let severity: ScheduleAudit["severity"] = "clear";
 
   if (!baseline.metrics.criticalOnTime) {
-    finding = `${criticalJob.shortLabel} already misses its deadline by ${slots(baseline.metrics.criticalTardiness)} in the normal shift`
+    finding = `${critical.shortLabel} already misses its deadline by ${slots(baseline.metrics.criticalTardiness)} in the normal shift`
       + (stress.metrics.criticalTardiness > baseline.metrics.criticalTardiness
-        ? `, and by ${slots(stress.metrics.criticalTardiness)} once a dispatch berth goes offline.`
-        : ", before any berth goes offline.");
+        ? `, and by ${slots(stress.metrics.criticalTardiness)} once ${shock}.`
+        : ", before anything goes wrong.");
     severity = "critical";
   } else if (!stress.metrics.criticalOnTime) {
-    finding = `${criticalJob.shortLabel} is on time in the normal shift, but misses by ${slots(stress.metrics.criticalTardiness)} when a dispatch berth goes offline.`;
+    finding = `${critical.shortLabel} is on time in the normal shift, but misses by ${slots(stress.metrics.criticalTardiness)} once ${shock}.`;
     severity = "critical";
   } else if (addedTardy > 0) {
-    finding = `${criticalJob.shortLabel} holds, but the plan picks up ${addedTardy} additional late job${addedTardy === 1 ? "" : "s"} under the disruption.`;
+    finding = `${critical.shortLabel} holds, but the plan picks up ${addedTardy} additional late job${addedTardy === 1 ? "" : "s"} under the disruption.`;
     severity = "watch";
   } else if (baseline.metrics.tardyJobs > 0) {
-    finding = `${criticalJob.shortLabel} holds under both conditions, but ${baseline.metrics.tardyJobs} other job${baseline.metrics.tardyJobs === 1 ? "" : "s"} already misses its deadline in the normal shift.`;
+    finding = `${critical.shortLabel} holds under both conditions, but ${baseline.metrics.tardyJobs} other job${baseline.metrics.tardyJobs === 1 ? "" : "s"} already misses its deadline in the normal shift.`;
     severity = "watch";
   }
 
@@ -434,6 +640,7 @@ function rankPlans(a: RankedPlan, b: RankedPlan): number {
     || (a.audit.stress.metrics.criticalTardiness - b.audit.stress.metrics.criticalTardiness)
     || (a.criticalEnd - b.criticalEnd)
     || (b.audit.stress.metrics.score - a.audit.stress.metrics.score)
+    || (a.audit.stress.metrics.totalIntakeWait - b.audit.stress.metrics.totalIntakeWait)
     || (a.audit.baseline.metrics.tardyJobs - b.audit.baseline.metrics.tardyJobs)
     || (b.audit.baseline.metrics.score - a.audit.baseline.metrics.score)
     || (a.movedJobs - b.movedJobs)
@@ -451,11 +658,11 @@ function rankPlans(a: RankedPlan, b: RankedPlan): number {
  * where an agent has nothing to propose.
  */
 export function recommendSchedule(scenario: Scenario, schedule: Schedule): PlanRecommendation | undefined {
-  const criticalJob = scenario.jobs.find((job) => job.priority === "critical")!;
+  const critical = criticalJob(scenario);
   const criticalEndUnderStress = (audit: ScheduleAudit) =>
-    audit.stress.jobs.find((run) => run.jobId === criticalJob.id)!.dispatchEnd;
+    audit.stress.jobs.find((run) => run.jobId === critical.id)!.dispatchEnd;
   const current = auditSchedule(scenario, schedule);
-  const ranked: RankedPlan[] = permutations(JOB_IDS)
+  const ranked: RankedPlan[] = permutations(scenario.jobs.map((job) => job.id))
     .map((candidate) => {
       const audit = auditSchedule(scenario, candidate);
       return { schedule: candidate, audit, movedJobs: movedPositions(schedule, candidate), criticalEnd: criticalEndUnderStress(audit) };
@@ -464,28 +671,31 @@ export function recommendSchedule(scenario: Scenario, schedule: Schedule): PlanR
   const best = ranked[0];
   if (best.movedJobs === 0) return undefined;
 
-  const proposed = best.audit.stress.jobs.find((run) => run.jobId === criticalJob.id)!;
-  const board = current.stress.jobs.find((run) => run.jobId === criticalJob.id)!;
-  const position = best.schedule.indexOf(criticalJob.id) + 1;
+  const proposed = best.audit.stress.jobs.find((run) => run.jobId === critical.id)!;
+  const board = current.stress.jobs.find((run) => run.jobId === critical.id)!;
+  const position = best.schedule.indexOf(critical.id) + 1;
   const recoveredJobs = current.stress.metrics.tardyJobs - best.audit.stress.metrics.tardyJobs;
 
   let reason: string;
   if (!board.onTime && proposed.onTime) {
-    reason = `Moves ${criticalJob.shortLabel} to position ${position}, so it clears dispatch by slot ${endSlot(proposed)} and holds its slot ${criticalJob.deadline} deadline with one berth offline. The order on the board misses it by ${slots(board.tardiness)}.`;
+    reason = `Moves ${critical.shortLabel} to position ${position}, so it clears dispatch by slot ${endSlot(proposed)} and holds its slot ${critical.deadline} deadline once ${scenario.disruption.clause}. The order on the board misses it by ${slots(board.tardiness)}.`;
   } else if (recoveredJobs > 0) {
-    reason = `Keeps ${criticalJob.shortLabel} on time and brings ${recoveredJobs} other job${recoveredJobs === 1 ? "" : "s"} back inside ${recoveredJobs === 1 ? "its" : "their"} deadline${recoveredJobs === 1 ? "" : "s"} once a dispatch berth goes offline.`;
+    reason = `Keeps ${critical.shortLabel} on time and brings ${recoveredJobs} other job${recoveredJobs === 1 ? "" : "s"} back inside ${recoveredJobs === 1 ? "its" : "their"} deadline${recoveredJobs === 1 ? "" : "s"} once ${scenario.disruption.clause}.`;
   } else if (proposed.dispatchEnd < board.dispatchEnd) {
     // Both orders hold, so the argument is margin: how much of the window is left when the
-    // berth goes offline, which is what the player is really being taught to buy.
-    reason = `Both orders hold, but this one clears ${criticalJob.shortLabel} by slot ${endSlot(proposed)} instead of slot ${endSlot(board)}, leaving ${slots(criticalJob.deadline - endSlot(proposed))} of margin against the slot ${criticalJob.deadline} deadline.`;
-  } else {
+    // shock lands, which is what the player is really being taught to buy.
+    reason = `Both orders hold, but this one clears ${critical.shortLabel} by slot ${endSlot(proposed)} instead of slot ${endSlot(board)}, leaving ${slots(critical.deadline - endSlot(proposed))} of margin against the slot ${critical.deadline} deadline.`;
+  } else if (best.audit.stress.metrics.totalWaiting !== current.stress.metrics.totalWaiting) {
     reason = `Holds the same deadlines under the shift with less time spent waiting for a berth: ${slots(best.audit.stress.metrics.totalWaiting)} against ${slots(current.stress.metrics.totalWaiting)} on the board.`;
+  } else {
+    reason = `Holds the same deadlines under the shift with less time queued in intake: ${slots(best.audit.stress.metrics.totalIntakeWait)} against ${slots(current.stress.metrics.totalIntakeWait)} on the board.`;
   }
 
   return { schedule: best.schedule, reason, audit: best.audit, movedJobs: best.movedJobs };
 }
 
 export function createInitialState(inputScenario: Scenario = defaultScenario): GameState {
+  const critical = criticalJob(inputScenario);
   return {
     scenario: inputScenario,
     roundNumber: 1,
@@ -495,10 +705,11 @@ export function createInitialState(inputScenario: Scenario = defaultScenario): G
     playerReason: "",
     shockApplied: false,
     receipts: [],
+    results: [],
     agentFocus: "idle",
     focus: {
       stationId: "dispatch",
-      jobId: "beacon",
+      jobId: critical.id,
       reason: "The shift opens on the dispatch bay, where the critical job has to leave.",
       source: "system",
     },
@@ -600,20 +811,27 @@ export function focusOnBottleneck(scenario: Scenario, evaluation: ScheduleEvalua
  * capacity is the cause, so it is what the floor points at.
  */
 export function focusOnShock(scenario: Scenario, audit: ScheduleAudit): FocusTarget {
-  const critical = scenario.jobs.find((job) => job.priority === "critical") ?? scenario.jobs[0];
+  const critical = criticalJob(scenario);
   const run = audit.stress.jobs.find((item) => item.jobId === critical.id);
-  const berths = scenario.stations.find((station) => station.id === "dispatch")?.parallelism ?? 1;
+  const berths = dispatchBerths(scenario);
   const lost = audit.stress.dispatchParallelism < berths ? audit.stress.dispatchParallelism : undefined;
-  const named = lost === undefined ? "the shift" : `berth ${lost + 1}`;
+  // A shift that loses capacity can name the berth. A shift whose shock is a late arrival
+  // has no berth to point at, so it points at the intake the delay hit.
+  const delayed = scenario.disruption.releaseDelays?.[0];
+  const named = lost !== undefined
+    ? `berth ${lost + 1}`
+    : delayed
+      ? `${getJob(scenario, delayed.jobId).shortLabel} arriving ${slots(delayed.slots)} late`
+      : "the shift";
   return {
-    stationId: "dispatch",
+    stationId: lost === undefined && delayed ? "prep" : "dispatch",
     jobId: critical.id,
     berthIndex: lost,
     reason: !run
       ? `${scenario.disruption.shortLabel}: ${named} is out for the shift.`
       : run.onTime
-        ? `With ${named} offline ${critical.shortLabel} still clears at slot ${endSlot(run)}, inside its slot ${critical.deadline} deadline.`
-        : `With ${named} offline ${critical.shortLabel} cannot start before slot ${startSlot(run)}, so it leaves at slot ${endSlot(run)} — ${slots(run.tardiness)} past its slot ${critical.deadline} deadline.`,
+        ? `With ${named} ${lost === undefined && delayed ? "" : "offline "}${critical.shortLabel} still clears at slot ${endSlot(run)}, inside its slot ${critical.deadline} deadline.`
+        : `With ${named} ${lost === undefined && delayed ? "" : "offline "}${critical.shortLabel} cannot start before slot ${startSlot(run)}, so it leaves at slot ${endSlot(run)} — ${slots(run.tardiness)} past its slot ${critical.deadline} deadline.`,
     source: "agent",
   };
 }
@@ -635,14 +853,14 @@ export function focusOnCandidate(scenario: Scenario, board: ScheduleEvaluation, 
       (Math.abs(second.other.dispatchEnd - second.run.dispatchEnd) - Math.abs(first.other.dispatchEnd - first.run.dispatchEnd))
       || first.run.jobId.localeCompare(second.run.jobId))[0];
   if (!moved || moved.other.dispatchEnd === moved.run.dispatchEnd) {
-    return { stationId: "dispatch", reason: "With a berth offline the candidate dispatches every job in the same slots the board does.", source: "agent" };
+    return { stationId: "dispatch", reason: `Under ${scenario.disruption.shortLabel} the candidate dispatches every job in the same slots the board does.`, source: "agent" };
   }
   const job = getJob(scenario, moved.run.jobId);
   return {
     stationId: "dispatch",
     jobId: job.id,
     berthIndex: moved.other.dispatchLane,
-    reason: `Two routes for ${job.shortLabel} with a berth offline: the board dispatches it in slots ${slotWindow(moved.run.dispatchStart, moved.run.dispatchEnd)}, the candidate in slots ${slotWindow(moved.other.dispatchStart, moved.other.dispatchEnd)}.`,
+    reason: `Two routes for ${job.shortLabel} under ${scenario.disruption.shortLabel}: the board dispatches it in slots ${slotWindow(moved.run.dispatchStart, moved.run.dispatchEnd)}, the candidate in slots ${slotWindow(moved.other.dispatchStart, moved.other.dispatchEnd)}.`,
     source: "agent",
   };
 }
@@ -739,7 +957,13 @@ export function applyDisruption(state: GameState): Transition {
   };
 }
 
-export function stageSchedule(state: GameState, schedule: Schedule, reason: string, expectedRevision: number): Transition {
+export function stageSchedule(
+  state: GameState,
+  schedule: Schedule,
+  reason: string,
+  expectedRevision: number,
+  options: { requireCurrentComparison?: boolean } = {},
+): Transition {
   if (state.pendingProposal) return { ok: false, error: { code: "pending_proposal", message: "A plan is already waiting for human review." } };
   if (state.phase !== "planning" && state.phase !== "disrupted") {
     return { ok: false, error: { code: "precondition_failed", message: "A plan can only be staged from the active planning board." } };
@@ -748,6 +972,18 @@ export function stageSchedule(state: GameState, schedule: Schedule, reason: stri
   if (reason.trim().length < 3) return { ok: false, error: { code: "invalid_input", message: "Add a short human reason before staging a plan." } };
   const valid = validateSchedule(state.scenario, schedule);
   if (!valid.ok) return valid;
+  if (options.requireCurrentComparison) {
+    const compared = state.lastComparison;
+    if (!comparisonIsCurrent(state) || !compared || compared.schedule.join(",") !== valid.state.join(",")) {
+      return {
+        ok: false,
+        error: {
+          code: "precondition_failed",
+          message: "Compare this exact order against the current board revision before staging an agent proposal.",
+        },
+      };
+    }
+  }
   const next: PendingProposal = {
     kind: "schedule",
     proposalId: `proposal-${state.roundNumber}-${state.revision}`,
@@ -787,9 +1023,7 @@ export function confirmPending(state: GameState): Transition {
   if (proposal.expectedRevision !== state.revision) return { ok: false, error: { code: "stale_revision", message: "The pending plan no longer matches the current board." } };
   if (proposal.reason.trim().length < 3) return { ok: false, error: { code: "invalid_input", message: "The human reason must contain at least three characters." } };
   const revision = state.revision + 1;
-  const metrics = evaluateSchedule(state.scenario, proposal.schedule, {
-    dispatchParallelism: state.shockApplied ? state.scenario.disruption.dispatchParallelism : 2,
-  });
+  const metrics = evaluateSchedule(state.scenario, proposal.schedule, shiftOptions(state.scenario, state.shockApplied));
   const previousConfirmedSchedule = state.activeReceipt ? state.activeReceipt.schedule : state.schedule;
   const receipt: Receipt = {
     id: `receipt-${state.roundNumber}-${revision}`,
@@ -863,9 +1097,173 @@ export function prepareUndo(state: GameState, receiptId: string, expectedRevisio
   };
 }
 
+/**
+ * The card, derived and not scored by opinion. Every objective names the number that decided
+ * it, so a reader can disagree with the grade by checking the board rather than by trusting
+ * it. One objective is reported rather than graded: human authority is a property of the
+ * design, so counting it toward the grade would be marking the game's own homework.
+ */
+export function summariseShift(state: GameState, events: ToolEvent[] = []): ShiftResult {
+  const { scenario } = state;
+  const evaluation = evaluateSchedule(scenario, state.schedule, shiftOptions(scenario, true));
+  const critical = criticalJob(scenario);
+  const criticalRun = evaluation.jobs.find((run) => run.jobId === critical.id)!;
+  const calls = events.filter((event) => event.kind !== "system");
+  const reads = calls.filter((event) => event.ok && (event.kind === "read" || event.kind === "simulation"));
+  const recoveryReceipts = state.receipts.filter((receipt) => receipt.shockApplied);
+
+  const objectives: ShiftObjective[] = [
+    {
+      id: "critical-on-time",
+      label: `${critical.shortLabel} makes its deadline under the disruption`,
+      met: criticalRun.onTime,
+      detail: `Clears at slot ${endSlot(criticalRun)} against a slot ${critical.deadline} deadline.`,
+      graded: true,
+    },
+    {
+      id: "every-job-on-time",
+      label: "No job misses its deadline",
+      met: evaluation.metrics.tardyJobs === 0,
+      detail: evaluation.metrics.tardyJobs === 0
+        ? `All ${evaluation.metrics.completedJobs} jobs land inside their windows.`
+        : `${evaluation.metrics.tardyJobs} of ${evaluation.metrics.completedJobs} jobs finish late.`,
+      graded: true,
+    },
+    {
+      id: "margin-kept",
+      label: `${critical.shortLabel} keeps margin rather than landing on the deadline`,
+      met: criticalRun.verdict === "on-time",
+      detail: criticalRun.verdict === "on-time"
+        ? `${slots(critical.deadline - endSlot(criticalRun))} of slack left against the deadline.`
+        : criticalRun.verdict === "at-risk"
+          ? "Lands exactly on the deadline, so one more slot of trouble misses it."
+          : `Past the deadline by ${slots(criticalRun.tardiness)}.`,
+      graded: true,
+    },
+    {
+      id: "auditor-consulted",
+      label: "The board was read before it was changed",
+      met: reads.length > 0,
+      detail: reads.length > 0
+        ? `${reads.length} successful read or stress-test call${reads.length === 1 ? "" : "s"} in the trace.`
+        : "No read or stress-test call was made on this shift.",
+      graded: true,
+    },
+    {
+      id: "recovery-confirmed",
+      label: "A recovery was confirmed after the shock landed",
+      met: recoveryReceipts.length > 0,
+      detail: recoveryReceipts.length > 0
+        ? `${recoveryReceipts.length} plan${recoveryReceipts.length === 1 ? "" : "s"} confirmed while the disruption was active.`
+        : "The shift was closed on the plan that was already committed.",
+      graded: true,
+    },
+    {
+      id: "human-authority",
+      label: "No tool call moved the revision",
+      met: calls.every((event) => event.revisionAfter === event.revisionBefore),
+      detail: `${calls.length} tool call${calls.length === 1 ? "" : "s"} recorded, ${state.receipts.length} human confirmation${state.receipts.length === 1 ? "" : "s"}.`,
+      graded: false,
+    },
+  ];
+
+  const graded = objectives.filter((objective) => objective.graded);
+  const met = graded.filter((objective) => objective.met).length;
+  const grade: ShiftGrade = met >= graded.length ? "A" : met === graded.length - 1 ? "B" : met === graded.length - 2 ? "C" : "D";
+  const summary = [
+    `${scenario.title} — shift ${scenario.order} — grade ${grade} (${met}/${graded.length} objectives)`,
+    `Order closed: ${formatSchedule(state.schedule, scenario)}`,
+    `Under ${scenario.disruption.shortLabel}: ${evaluation.metrics.onTimeJobs}/${evaluation.metrics.completedJobs} on time, makespan ${evaluation.metrics.makespan}, board score ${evaluation.metrics.score}.`,
+    `Queue cost: ${slots(evaluation.metrics.totalIntakeWait)} in intake, ${slots(evaluation.metrics.totalWaiting)} waiting for a berth.`,
+    `Division of labour: ${calls.length} tool calls (${calls.filter((event) => !event.ok).length} refused), ${state.receipts.length} human confirmations, revision ${state.revision}.`,
+    `Lesson: ${scenario.lesson}`,
+  ];
+
+  return {
+    scenarioId: scenario.id,
+    scenarioTitle: scenario.title,
+    shiftOrder: scenario.order,
+    grade,
+    score: evaluation.metrics.score,
+    objectivesMet: met,
+    objectivesGraded: graded.length,
+    finalSchedule: cloneSchedule(state.schedule),
+    evaluation,
+    objectives,
+    activity: {
+      revisions: state.revision,
+      humanConfirmations: state.receipts.length,
+      toolCalls: calls.length,
+      toolRefusals: calls.filter((event) => !event.ok).length,
+      rollbacksPrepared: calls.filter((event) => event.ok && event.tool === "undo_schedule").length,
+      reasonsWritten: state.receipts.filter((receipt) => receipt.reason.trim().length > 0).length,
+    },
+    lesson: scenario.lesson,
+    summary,
+  };
+}
+
 export function resetRound(state: GameState): GameState {
   return {
     ...createInitialState(state.scenario),
     roundNumber: state.roundNumber + 1,
+    // The cards already earned survive a replay. Losing them would make the campaign rail
+    // forget shifts the player finished, and the result card is the only place this game
+    // reports what was achieved.
+    results: state.results,
+  };
+}
+
+/**
+ * Moves the session to another shift. Human-only on purpose: choosing which shift to work is
+ * the same class of decision as committing a plan, so no tool reaches it. A shift already
+ * closed can be replayed, and the cards earned so far are carried across.
+ */
+export function startShift(state: GameState, scenario: Scenario): Transition {
+  if (state.pendingProposal) {
+    return { ok: false, error: { code: "pending_proposal", message: "Review or reject the pending plan before changing shift." } };
+  }
+  return {
+    ok: true,
+    state: {
+      ...createInitialState(scenario),
+      roundNumber: state.roundNumber + 1,
+      results: state.results,
+    },
+  };
+}
+
+/**
+ * Closes the shift and writes the card. Available only once the shock has landed and a plan
+ * has been confirmed under it — closing before that would report a board nobody had to
+ * defend. The trace is passed in rather than stored on the state: the card reports how the
+ * work was divided, and the tool log is the only honest source for that.
+ */
+export function closeShift(state: GameState, events: ToolEvent[] = []): Transition {
+  if (state.pendingProposal) {
+    return { ok: false, error: { code: "pending_proposal", message: "Review or reject the pending plan before closing the shift." } };
+  }
+  if (state.phase !== "disrupted" || !state.shockApplied) {
+    return { ok: false, error: { code: "precondition_failed", message: "A shift can only be closed after the disruption has been met." } };
+  }
+  if (!state.activeReceipt) {
+    return { ok: false, error: { code: "no_active_receipt", message: "Confirm a plan for the disrupted shift before closing it." } };
+  }
+  const resultCard = summariseShift(state, events);
+  return {
+    ok: true,
+    state: {
+      ...state,
+      phase: "closed",
+      resultCard,
+      results: [...state.results, resultCard],
+      agentFocus: "recovery",
+      focus: {
+        stationId: "dispatch",
+        jobId: resultCard.finalSchedule[0],
+        reason: `Shift closed at revision ${state.revision}: grade ${resultCard.grade}, ${resultCard.objectivesMet} of ${resultCard.objectivesGraded} objectives met.`,
+        source: "system",
+      },
+    },
   };
 }

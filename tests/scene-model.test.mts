@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scenario } from "../src/data/fixtures.ts";
+import { scenario, shifts } from "../src/data/fixtures.ts";
 import {
   applyDisruption,
   auditSchedule,
@@ -10,6 +10,7 @@ import {
   evaluateSchedule,
   recordComparison,
   setFocus,
+  shiftOptions,
   stageSchedule,
   type GameState,
   type Transition,
@@ -245,4 +246,39 @@ test("playing the shift back moves the blocks and leaves every claim about the p
     previous = meters;
   }
   assert.deepEqual(previous, [1, 1, 1, 1]);
+});
+
+/**
+ * The floor has to hold every shift, not the one it was built against. Shifts 2 and 3 stagger
+ * their arrivals, so the same clock now has a state shift 1 never had: a job that exists, is
+ * not done, and has not turned up yet. It belongs off the floor until it does — a block standing
+ * on a prep pad before its own arrival would be the floor telling a story the plan does not.
+ */
+test("every shift's floor holds, including the ones whose jobs arrive late", () => {
+  for (const shift of shifts) {
+    const state: GameState = stateOf(enterArena(createInitialState(shift)));
+    for (const shocked of [false, true]) {
+      const options = shiftOptions(shift, shocked);
+      const evaluation = evaluateSchedule(shift, state.schedule, options);
+      const model = deriveSceneModel(state, evaluation);
+      const last = Math.max(shift.horizon, evaluation.metrics.makespan);
+      for (let slot = 0; slot <= last; slot += 1) {
+        const stands = timePlacements(model.jobs, slot);
+        const where = `${shift.id} shocked=${shocked} slot=${slot}`;
+        const occupied = stands.filter((stand) => stand.site !== "queue").map((stand) => stand.site);
+        assert.equal(new Set(occupied).size, occupied.length, `${where}: two jobs shared a stand`);
+        for (const stand of stands) {
+          const job = model.jobs.find((entry) => entry.id === stand.jobId)!;
+          // Nothing is on a pad or in a berth before it has arrived.
+          if (slot < job.releaseAt) {
+            assert.equal(stand.site, "queue", `${where}: ${job.id} was on the floor ${job.releaseAt - slot} slots before it arrived`);
+          }
+          if (stand.site === "prep-a") assert.equal(jobPhaseAt(job, slot), "prepping", `${where}: ${job.id} holds the prep lane without prepping`);
+          if (stand.site.startsWith("berth-")) assert.equal(jobPhaseAt(job, slot), "dispatching", `${where}: ${job.id} holds a berth without dispatching`);
+        }
+      }
+      // The berths the shift actually runs, and the ones the shock shut.
+      assert.equal(model.berths.filter((berth) => berth.active).length, options.dispatchParallelism, `${shift.id} shocked=${shocked}: the floor shows the berths the plan was judged on`);
+    }
+  }
 });

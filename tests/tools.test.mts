@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scenario } from "../src/data/fixtures.ts";
-import { applyDisruption, comparisonIsCurrent, confirmPending, createInitialState, enterArena, reorderJob, stageSchedule, type GameState, type ToolEvent, type Transition } from "../src/domain/model.ts";
-import { createFlowlineRuntime } from "../src/tools/webmcp.ts";
+import { scenario, shifts } from "../src/data/fixtures.ts";
+import { applyDisruption, closeShift, comparisonIsCurrent, confirmPending, createInitialState, enterArena, reorderJob, stageSchedule, type GameState, type Scenario, type ToolEvent, type Transition } from "../src/domain/model.ts";
+import { createFlowlineRuntime, toolSpecs } from "../src/tools/webmcp.ts";
 
 function stateOf<T>(transition: Transition<T>): T {
   assert.equal(transition.ok, true, transition.ok ? undefined : transition.error.message);
@@ -70,6 +70,32 @@ test("each agent tool aims the floor at its own cause, and says which one", asyn
   assert.equal(reasons.size, 5);
 });
 
+test("an agent proposal is revision-bound to the exact candidate it compared", async () => {
+  let state: GameState = stateOf(enterArena(createInitialState(scenario)));
+  const runtime = createFlowlineRuntime({
+    readState: () => state,
+    writeState: (nextState) => { state = nextState; },
+    emit: () => undefined,
+  });
+  const withoutComparison = await runtime.invoke("stage_schedule", {
+    schedule: scenario.robustSchedule,
+    reason: "Protect the critical deadline",
+    expectedRevision: state.revision,
+  });
+  assert.equal(withoutComparison.ok, false);
+  if (!withoutComparison.ok) assert.equal(withoutComparison.code, "precondition_failed");
+  assert.equal(state.pendingProposal, undefined);
+
+  assert.equal((await runtime.invoke("compare_plans", { schedule: scenario.robustSchedule })).ok, true);
+  const staged = await runtime.invoke("stage_schedule", {
+    schedule: scenario.robustSchedule,
+    reason: "Protect the critical deadline",
+    expectedRevision: state.revision,
+  });
+  assert.equal(staged.ok, true);
+  assert.deepEqual(state.pendingProposal?.schedule, scenario.robustSchedule);
+});
+
 test("the runtime exposes structured tools and refuses read access before the shift starts", async () => {
   let state: GameState = createInitialState(scenario);
   const events: ToolEvent[] = [];
@@ -92,6 +118,9 @@ test("the runtime exposes structured tools and refuses read access before the sh
   if (inspected.ok) {
     assert.equal(inspected.data?.revision, state.revision);
     assert.deepEqual(inspected.data?.schedule, scenario.defaultSchedule);
+    assert.deepEqual((inspected.data?.queue as Array<{ id: string }>).map((job) => job.id), scenario.defaultSchedule);
+    assert.equal((inspected.data?.stations as Array<{ id: string; capacity: number }>).find((station) => station.id === "dispatch")?.capacity, 2);
+    assert.ok((inspected.data?.availableActions as string[]).includes("compare_plans"));
   }
   assert.equal(state.agentFocus, "inspected");
 
@@ -100,9 +129,12 @@ test("the runtime exposes structured tools and refuses read access before the sh
   if (!invalid.ok) assert.equal(invalid.code, "invalid_schedule");
   assert.ok(events.some((event) => event.tool === "inspect_board"));
 
+  const compared = await runtime.invoke("compare_plans", { schedule: scenario.robustSchedule });
+  assert.equal(compared.ok, true);
+
   const staged = await runtime.invoke("stage_schedule", {
-    schedule: scenario.defaultSchedule,
-    reason: "Keep the clear baseline for review",
+    schedule: scenario.robustSchedule,
+    reason: "Keep the robust order for review",
     expectedRevision: state.revision,
   });
   assert.equal(staged.ok, true);
@@ -199,12 +231,28 @@ test("every call leaves one trace line, refusals included, and the trace never c
   // The focus has to be able to say what it is showing. A target without a sentence is
   // a camera move, and the trace could not tell the four tools' causes apart.
   assert.match(read.focus!.reason, new RegExp(scenario.jobs.find((job) => job.id === state.schedule[0])!.shortLabel));
+  const compared = await runtime.invoke("compare_plans", { schedule: scenario.robustSchedule });
+  assert.equal(compared.ok, true);
   const reason = "Berth two is down for maintenance until Friday";
-  const staged = await runtime.invoke("stage_schedule", {
+  const offSchema = await runtime.invoke("stage_schedule", {
     schedule: scenario.robustSchedule,
     reason,
     expectedRevision: state.revision,
     hurry: true,
+  });
+  assert.equal(offSchema.ok, false);
+  if (!offSchema.ok) assert.equal(offSchema.code, "invalid_input");
+  assert.equal(state.pendingProposal, undefined);
+  const rejected = events.at(-1)!;
+  assert.equal(rejected.kind, "proposal");
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.revisionBefore, rejected.revisionAfter);
+  assert.ok(rejected.input?.includes("off-schema: hurry"));
+
+  const staged = await runtime.invoke("stage_schedule", {
+    schedule: scenario.robustSchedule,
+    reason,
+    expectedRevision: state.revision,
   });
   assert.equal(staged.ok, true);
   const proposal = events.at(-1)!;
@@ -216,8 +264,9 @@ test("every call leaves one trace line, refusals included, and the trace never c
   assert.ok(proposal.input?.includes(`reason ${reason.length} chars`));
   assert.equal(proposal.input?.includes("maintenance"), false);
   assert.ok(proposal.input?.includes("schedule beacon→pantry→archive→relay"));
-  // The schema forbids extra keys, so a client that sends one leaves a mark.
-  assert.ok(proposal.input?.includes("off-schema: hurry"));
+  // The schema forbids extra keys, and the dispatcher rejects one before it reaches the
+  // domain transition. The preceding refusal keeps that boundary visible in the trace.
+  assert.equal(proposal.input?.includes("off-schema: hurry"), false);
 
   // Refused while a plan waits for review, and the refusal does not borrow the ID of
   // the proposal that is already pending.
@@ -239,7 +288,7 @@ test("every call leaves one trace line, refusals included, and the trace never c
   assert.equal(events.at(-1)?.kind, "system");
   assert.equal(events.at(-1)?.code, "invalid_input");
   assert.equal(events.at(-1)?.input, undefined);
-  assert.equal(events.length, 6);
+  assert.equal(events.length, 8);
 });
 
 test("tool calls are serialised, so a host that applies a write later cannot serve a stale board", async () => {
@@ -249,9 +298,13 @@ test("tool calls are serialised, so a host that applies a write later cannot ser
   if (entered.ok) state = entered.state;
 
   const trace: string[] = [];
+  // The runtime reads the board once while it is being built, to derive the schedule schema
+  // from the loaded shift's job list. That read is not a tool call, so the trace starts
+  // after construction — otherwise this test would count the constructor as a racing caller.
+  let recording = false;
   const runtime = createFlowlineRuntime({
     readState: () => {
-      trace.push(state.lastAudit ? "read audited" : "read fresh");
+      if (recording) trace.push(state.lastAudit ? "read audited" : "read fresh");
       return state;
     },
     // React applies state on its own schedule, so this host deliberately lands the
@@ -263,6 +316,7 @@ test("tool calls are serialised, so a host that applies a write later cannot ser
     },
     emit: () => undefined,
   });
+  recording = true;
 
   const [first, second] = await Promise.all([
     runtime.invoke("find_bottleneck"),
@@ -283,8 +337,8 @@ test("tool calls are serialised, so a host that applies a write later cannot ser
   assert.equal(trace.indexOf("write") < trace.indexOf("read audited"), true);
 });
 
-test("native registration is six tools with typed state-changing boundaries", async () => {
-  const registered: Array<{ name: string; annotations?: { readOnlyHint?: boolean }; inputSchema: Record<string, unknown> }> = [];
+test("native registration is eight tools with typed state-changing boundaries", async () => {
+  const registered: Array<{ name: string; annotations?: { readOnlyHint: boolean; destructiveHint: boolean }; inputSchema: Record<string, unknown> }> = [];
   const previousDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
   Object.defineProperty(globalThis, "document", {
     configurable: true,
@@ -303,12 +357,69 @@ test("native registration is six tools with typed state-changing boundaries", as
     });
     const snapshot = await runtime.settled;
     assert.equal(snapshot.complete, true);
-    assert.deepEqual(snapshot.registered, ["inspect_board", "find_bottleneck", "simulate_disruption", "compare_plans", "stage_schedule", "undo_schedule"]);
-    assert.equal(registered.length, 6);
+    assert.equal(snapshot.provenance, "unverified");
+    assert.deepEqual(snapshot.registered, ["inspect_board", "list_shifts", "find_bottleneck", "simulate_disruption", "compare_plans", "review_shift", "stage_schedule", "undo_schedule"]);
+    assert.equal(registered.length, 8);
     assert.ok(registered.every((tool) => tool.inputSchema.additionalProperties === false));
-    assert.equal(registered.find((tool) => tool.name === "stage_schedule")?.annotations, undefined);
-    assert.equal(registered.find((tool) => tool.name === "inspect_board")?.annotations?.readOnlyHint, true);
+    // Not one of the eight claims to be read-only, because not one of them is: the audits
+    // write focus and their own finding, the two writes file a proposal. A host that sees
+    // readOnlyHint false has to decide whether to prompt, which is the honest position to put
+    // it in — the narrower promise, that none of them can move the revision, is what the
+    // journey artifact demonstrates instead of what an annotation asserts.
+    assert.equal(registered.every((tool) => tool.annotations?.readOnlyHint === false), true);
+    assert.equal(registered.every((tool) => tool.annotations?.destructiveHint === false), true);
+    assert.equal(toolSpecs(scenario).filter((spec) => spec.boardReadOnly).map((spec) => spec.name).join(","),
+      "inspect_board,list_shifts,find_bottleneck,simulate_disruption,compare_plans,review_shift");
+    // The advertised schedule is the loaded shift's own job list, not a constant: the
+    // five-job shift has to advertise five ids or a correct client cannot call it.
+    const items = (tool: string, shift: Scenario) =>
+      (toolSpecs(shift).find((spec) => spec.name === tool)?.inputSchema as { properties?: { schedule?: { maxItems?: number; items?: { enum?: string[] } } } })?.properties?.schedule;
+    assert.equal(items("compare_plans", scenario)?.maxItems, 4);
+    assert.deepEqual(items("stage_schedule", shifts[1])?.items?.enum, shifts[1].jobs.map((job) => job.id));
+    assert.equal(items("stage_schedule", shifts[1])?.maxItems, 5);
     assert.equal((registered.find((tool) => tool.name === "stage_schedule")?.inputSchema.required as string[]).includes("expectedRevision"), true);
+  } finally {
+    if (previousDescriptor) Object.defineProperty(globalThis, "document", previousDescriptor);
+    else delete (globalThis as typeof globalThis & { document?: unknown }).document;
+  }
+});
+
+// A page cannot verify that `document.modelContext` came from a browser, so the snapshot must
+// never say it did. This is the assertion that keeps the arena's badge honest: the label is
+// derived from `provenance`, and no branch of it produces the word "native".
+test("registration provenance is absent, unverified, or a declared test double — never native", async () => {
+  const previousDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const settle = async (modelContext?: Record<string, unknown>) => {
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: modelContext ? { modelContext } : {},
+    });
+    return createFlowlineRuntime({
+      readState: () => createInitialState(scenario),
+      writeState: () => undefined,
+      emit: () => undefined,
+    }).settled;
+  };
+
+  try {
+    const absent = await settle();
+    assert.equal(absent.provenance, "absent");
+    assert.equal(absent.phase, "unsupported");
+    assert.equal(absent.available, false);
+
+    // Any WebMCP client, real or scripted, looks like this. The page claims only the registration.
+    const unverified = await settle({ registerTool: () => undefined });
+    assert.equal(unverified.provenance, "unverified");
+    assert.equal(unverified.phase, "registered");
+    assert.match(unverified.note, /registered on document\.modelContext/);
+
+    // This project's own harnesses set the flag, so every evidence capture is labelled scripted.
+    const double = await settle({ registerTool: () => undefined, flowlineTestDouble: true });
+    assert.equal(double.provenance, "test-double");
+    assert.equal(double.phase, "registered");
+    assert.match(double.note, /scripted test double/);
+
+    for (const snapshot of [absent, unverified, double]) assert.doesNotMatch(snapshot.note, /native/i);
   } finally {
     if (previousDescriptor) Object.defineProperty(globalThis, "document", previousDescriptor);
     else delete (globalThis as typeof globalThis & { document?: unknown }).document;
@@ -350,7 +461,7 @@ test("native registration survives a StrictMode double mount and releases the to
 
     // StrictMode's order: mount, tear that same mount down, mount again. The teardown
     // may not strip the second mount's tools, and the second mount has to end up
-    // owning all six.
+    // owning all eight.
     const first = createFlowlineRuntime(host);
     const teardown = first.cleanup();
     const second = createFlowlineRuntime(host);
@@ -363,12 +474,131 @@ test("native registration survives a StrictMode double mount and releases the to
     assert.equal(firstSnapshot.complete, false);
     assert.equal(firstSnapshot.phase, "partial");
     assert.deepEqual([...live].sort(), [...secondSnapshot.registered].sort());
-    assert.equal(live.size, 6);
+    assert.equal(live.size, 8);
 
     await second.cleanup();
     assert.deepEqual([...live], []);
   } finally {
     if (previousDescriptor) Object.defineProperty(globalThis, "document", previousDescriptor);
     else delete (globalThis as typeof globalThis & { document?: unknown }).document;
+  }
+});
+
+test("partial native registration rolls back the successful prefix when the host can unregister", async () => {
+  const live = new Set<string>();
+  const previousDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      modelContext: {
+        registerTool: async (definition: { name: string }) => {
+          if (definition.name === "simulate_disruption") throw new Error("host rejected this tool");
+          live.add(definition.name);
+        },
+        unregisterTool: async (name: string) => { live.delete(name); },
+      },
+    },
+  });
+
+  try {
+    const runtime = createFlowlineRuntime({
+      readState: () => createInitialState(scenario),
+      writeState: () => undefined,
+      emit: () => undefined,
+    });
+    const snapshot = await runtime.settled;
+    assert.equal(snapshot.available, true);
+    assert.equal(snapshot.complete, false);
+    assert.equal(snapshot.phase, "partial");
+    assert.deepEqual(snapshot.registered, []);
+    assert.deepEqual(snapshot.failed, ["simulate_disruption"]);
+    assert.match(snapshot.note, /rolled back/i);
+    assert.deepEqual([...live], []);
+    await runtime.cleanup();
+  } finally {
+    if (previousDescriptor) Object.defineProperty(globalThis, "document", previousDescriptor);
+    else delete (globalThis as typeof globalThis & { document?: unknown }).document;
+  }
+});
+
+/**
+ * The campaign rail as a tool, and the card as a tool. `list_shifts` is the one call that reads
+ * without touching anything — not even the focus — because naming the shifts is not a reason to
+ * move the floor. `review_shift` is the opposite kind of boundary: the card exists only after a
+ * human closes the shift, so before that the honest answer is a refusal.
+ */
+test("the campaign reads without touching the board, and the card refuses until a human closes the shift", async () => {
+  const shift = shifts.find((entry) => entry.id === "rolling-intake")!;
+  let state: GameState = createInitialState(shift);
+  const events: ToolEvent[] = [];
+  const runtime = createFlowlineRuntime({
+    readState: () => state,
+    writeState: (nextState) => { state = nextState; },
+    emit: (event) => { events.push({ ...event, id: `event-${events.length + 1}`, at: new Date(0).toISOString() }); },
+    shifts,
+    readEvents: () => events,
+  });
+
+  // Before the floor is entered: the campaign answers, the board does not.
+  const before = { revision: state.revision, focus: state.focus, agentFocus: state.agentFocus, phase: state.phase };
+  const listed = await runtime.invoke("list_shifts");
+  assert.equal(listed.ok, true);
+  assert.equal(state.revision, before.revision);
+  assert.deepEqual(state.focus, before.focus, "naming the shifts must not move the floor");
+  assert.equal(state.agentFocus, before.agentFocus);
+  assert.equal(state.phase, before.phase);
+  if (listed.ok) {
+    const rows = listed.data?.shifts as Array<Record<string, unknown>>;
+    assert.equal(rows.length, shifts.length);
+    assert.deepEqual(rows.map((row) => row.order), [1, 2, 3]);
+    assert.equal(rows.filter((row) => row.active).length, 1);
+    assert.equal(rows.find((row) => row.active)?.id, shift.id);
+    assert.equal(rows.every((row) => row.closed === false), true, "nothing is closed yet");
+    assert.equal(rows.find((row) => row.id === "night-handover")?.staggeredIntake, true);
+    assert.ok((listed.data?.humanOnly as string[]).includes("close the shift"));
+  }
+  const listedEvent = events.at(-1)!;
+  assert.equal(listedEvent.tool, "list_shifts");
+  assert.equal(listedEvent.revisionBefore, listedEvent.revisionAfter, "a read cannot move the revision");
+
+  const earlyCard = await runtime.invoke("review_shift");
+  assert.equal(earlyCard.ok, false);
+  if (!earlyCard.ok) assert.equal(earlyCard.code, "precondition_failed");
+
+  state = stateOf(enterArena(state));
+  const stillNoCard = await runtime.invoke("review_shift");
+  assert.equal(stillNoCard.ok, false);
+  if (!stillNoCard.ok) assert.equal(stillNoCard.code, "shift_not_closed");
+
+  // Run the shift the way the page does: commit, meet the shock, replan, then close it.
+  state = stateOf(stageSchedule(state, shift.defaultSchedule, "Open on the order the floor came with.", state.revision));
+  state = stateOf(confirmPending(state));
+  state = stateOf(applyDisruption(state));
+  state = stateOf(stageSchedule(state, shift.robustSchedule, "One berth is gone, so dispatch Seedbank first.", state.revision));
+  state = stateOf(confirmPending(state));
+  const closedCount = events.length;
+  state = stateOf(closeShift(state, events));
+
+  const reviewed = await runtime.invoke("review_shift");
+  assert.equal(reviewed.ok, true);
+  if (reviewed.ok) {
+    const card = reviewed.data?.card as Record<string, unknown>;
+    assert.equal(card.scenarioId, shift.id);
+    assert.deepEqual(card.finalSchedule, shift.robustSchedule);
+    assert.equal(card.grade, state.resultCard?.grade);
+    assert.equal((card.metrics as { tardyJobs: number }).tardyJobs, 0, "the robust order lands every job on this shift");
+    assert.equal((card.activity as { humanConfirmations: number }).humanConfirmations, state.receipts.length);
+    assert.ok((card.summary as string[]).length >= 5);
+  }
+  assert.equal(events.length, closedCount + 1, "reviewing the card is one call, and it is traced");
+  assert.equal(state.revision, events.at(-1)!.revisionAfter, "reading the card leaves the board where it was");
+
+  const listedAfter = await runtime.invoke("list_shifts");
+  assert.equal(listedAfter.ok, true);
+  if (listedAfter.ok) {
+    const row = (listedAfter.data?.shifts as Array<Record<string, unknown>>).find((entry) => entry.id === shift.id);
+    assert.equal(row?.closed, true);
+    assert.equal(row?.grade, state.resultCard?.grade);
+    assert.equal(row?.objectivesMet, `${state.resultCard?.objectivesMet}/${state.resultCard?.objectivesGraded}`);
   }
 });

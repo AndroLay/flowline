@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import {
   applyDisruption,
   auditSchedule,
+  closeShift,
   comparisonIsCurrent,
   confirmPending,
   createInitialState,
+  criticalJob,
   enterArena,
   evaluateSchedule,
   recommendSchedule,
@@ -13,19 +15,24 @@ import {
   resetRound,
   setFocus,
   setPlayerReason,
+  shiftOptions,
+  stageSchedule,
+  startShift,
   updatePendingReason,
   type FocusTarget,
   type GameState,
   type JobId,
   type PlanRecommendation,
+  type Scenario,
   type ToolEvent,
 } from "./domain/model.ts";
+import { shifts } from "./data/fixtures.ts";
 import { createFlowlineRuntime, type FlowlineRuntime, type RegistrationSnapshot } from "./tools/webmcp.ts";
 import { deriveSceneModel } from "./visual/scene-model.ts";
 import { ArenaPage } from "./ui/ArenaPage.tsx";
 import { BriefPage } from "./ui/BriefPage.tsx";
 import { FocusView, type RendererState } from "./ui/FocusView.tsx";
-import { BootScreen, GuideModal, Notice } from "./ui/Overlays.tsx";
+import { BootScreen, GuideModal, Notice, ResultCardModal } from "./ui/Overlays.tsx";
 import type { ShiftMode } from "./ui/PlanBoard.tsx";
 
 type NoticeState = { tone: "success" | "error" | "info"; text: string };
@@ -36,6 +43,7 @@ const EMPTY_REGISTRATION: RegistrationSnapshot = {
   available: false,
   complete: false,
   phase: "unsupported",
+  provenance: "absent",
   registered: [],
   failed: [],
   note: "Starting local operations guide…",
@@ -65,8 +73,17 @@ export function App() {
   const [focusOpen, setFocusOpen] = useState(false);
   const [focusRenderer, setFocusRenderer] = useState<RendererState>("loading");
   const [mode, setMode] = useState<ShiftMode>("normal");
-  const [selectedJobId, setSelectedJobId] = useState<JobId>("beacon");
+  const [selectedJobId, setSelectedJobId] = useState<JobId>(() => criticalJob(state.scenario).id);
+  const [resultOpen, setResultOpen] = useState(false);
+  const focusReturnRef = useRef<HTMLElement | null>(null);
   const stateRef = useRef(state);
+  /**
+   * The whole trace, as against the nine lines the rail shows. The result card counts calls
+   * and refusals over a shift, and `review_shift` hands that count to an agent, so both need
+   * the log rather than the tail of it — the rail's slice is a display decision and must not
+   * become the number the card reports.
+   */
+  const traceRef = useRef<ToolEvent[]>([]);
   const eventSequence = useRef(0);
 
   /**
@@ -79,6 +96,8 @@ export function App() {
     stateRef.current = next;
     setState(next);
   }, []);
+
+  const shiftId = state.scenario.id;
 
   useEffect(() => {
     const startedAt = performance.now();
@@ -93,13 +112,24 @@ export function App() {
     return () => window.clearInterval(timer);
   }, []);
 
+  /**
+   * The runtime is rebuilt when the shift changes, and only then. Its catalogue is built from
+   * the board it is given — the schedule schema advertises that shift's job ids and its exact
+   * length — so a runtime carried across a shift change would go on offering a host the enum
+   * of a floor nobody is standing on. Unregister first, then register the new set, which is
+   * also what a host sees: the tool list is a property of the page's current state.
+   */
   useEffect(() => {
     const nextRuntime = createFlowlineRuntime({
       readState: () => stateRef.current,
       writeState: commit,
+      readEvents: () => traceRef.current,
+      shifts,
       emit: (event) => {
         const id = `tool-${++eventSequence.current}`;
-        setEvents((current) => [...current, { ...event, id, at: new Date().toISOString() }].slice(-9));
+        const line = { ...event, id, at: new Date().toISOString() };
+        traceRef.current = [...traceRef.current, line];
+        setEvents((current) => [...current, line].slice(-9));
       },
     });
     setRuntime(nextRuntime);
@@ -108,7 +138,7 @@ export function App() {
     return () => {
       void nextRuntime.cleanup();
     };
-  }, [commit]);
+  }, [commit, shiftId]);
 
   useEffect(() => {
     if (!notice) return undefined;
@@ -119,16 +149,27 @@ export function App() {
   useEffect(() => {
     setMode("normal");
   }, [state.revision, state.shockApplied]);
+
+  /**
+   * A new shift brings a new floor, so the selection has to move with it: keeping the previous
+   * shift's job id would leave every surface highlighting a job that is not in the queue. The
+   * critical job is the one the round is graded on, which is the right thing to open on.
+   */
+  useEffect(() => {
+    setSelectedJobId(criticalJob(stateRef.current.scenario).id);
+    setResultOpen(false);
+  }, [shiftId, state.roundNumber]);
   // One shift condition drives every surface: a shock is either committed by the
   // scenario or previewed by the switch, never invented per panel.
   const shocked = state.shockApplied || mode === "stress";
   // Both plans are judged under the same shift, so the live strip and the ghost
   // strip stay comparable: a previewed shock must not quietly give the proposal a
-  // berth the committed plan has lost.
-  const shiftParallelism = shocked ? state.scenario.disruption.dispatchParallelism : 2;
+  // berth the committed plan has lost — and on a shift whose shock is a late arrival
+  // rather than a lost berth, both strips have to feel that arrival too.
+  const conditions = useMemo(() => shiftOptions(state.scenario, shocked), [shocked, state.scenario]);
   const displayEvaluation = useMemo(
-    () => evaluateSchedule(state.scenario, state.schedule, { dispatchParallelism: shiftParallelism }),
-    [shiftParallelism, state.scenario, state.schedule],
+    () => evaluateSchedule(state.scenario, state.schedule, conditions),
+    [conditions, state.scenario, state.schedule],
   );
   const derivedAudit = useMemo(() => auditSchedule(state.scenario, state.schedule), [state.scenario, state.schedule]);
   const audit = state.lastAudit ?? derivedAudit;
@@ -149,8 +190,8 @@ export function App() {
         ? state.lastComparison?.schedule
         : undefined;
     if (!candidate) return undefined;
-    return evaluateSchedule(state.scenario, candidate, { dispatchParallelism: shiftParallelism });
-  }, [shiftParallelism, state]);
+    return evaluateSchedule(state.scenario, candidate, conditions);
+  }, [conditions, state]);
   const sceneModel = useMemo(
     () => deriveSceneModel(state, displayEvaluation, { ghostEvaluation: ghost }),
     [displayEvaluation, ghost, state],
@@ -212,6 +253,55 @@ export function App() {
       });
     }
   }
+
+  function closeFocus() {
+    setFocusOpen(false);
+    // The arena opener is unmounted while the focus page owns the viewport. Restore
+    // the user's keyboard position after React puts that button back in the tree.
+    window.requestAnimationFrame(() => focusReturnRef.current?.focus());
+  }
+
+  function stageHumanPlan() {
+    showTransition(stageSchedule(state, state.schedule, state.playerReason, state.revision));
+  }
+
+  /**
+   * The two ends of a shift, and the reason both are buttons rather than tools. Closing writes
+   * the card that says what was achieved, and choosing what to work next is the same class of
+   * decision as committing a plan — an agent may read either through `review_shift` and
+   * `list_shifts`, and may reach neither. The trace is handed to `closeShift` because the card
+   * reports how the work was divided, and it is cleared with the floor: a new shift's card must
+   * not count calls made against the last one.
+   */
+  function closeCurrentShift() {
+    if (showTransition(closeShift(state, traceRef.current))) {
+      setResultOpen(true);
+      setNotice({ tone: "success", text: "Shift closed. The result card reports what this plan achieved." });
+    }
+  }
+
+  function beginShift(next: Scenario) {
+    if (showTransition(startShift(state, next))) {
+      setEvents([]);
+      traceRef.current = [];
+      setNotice({ tone: "info", text: `Shift ${String(next.order).padStart(2, "0")} — ${next.title}. Read the brief, then plan.` });
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }
+
+  function restartRound() {
+    commit(resetRound(state));
+    setEvents([]);
+    traceRef.current = [];
+    setNotice({ tone: "info", text: `Round ${state.roundNumber + 1} is ready.` });
+  }
+
+  function openFocus() {
+    focusReturnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setFocusOpen(true);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
   const brief = state.phase === "setup";
   const focus = focusOpen && !brief;
   if (!bootReady) return <BootScreen progress={bootProgress} onSkip={() => setBootReady(true)} />;
@@ -225,7 +315,7 @@ export function App() {
         round={state.roundNumber}
         registration={registration}
         onEnter={() => { showTransition(enterArena(state)); window.scrollTo({ top: 0, behavior: "auto" }); }}
-        onOverview={() => setFocusOpen(false)}
+        onOverview={closeFocus}
         onGuide={() => setGuideOpen(true)}
       />
 
@@ -248,10 +338,10 @@ export function App() {
             focus={state.focus}
             ghostEvaluation={ghost}
             onFocus={(target: FocusTarget) => { commit(setFocus(state, target)); if (target.jobId) setSelectedJobId(target.jobId); }}
-            onClose={() => setFocusOpen(false)}
+            onClose={closeFocus}
             onRendererState={setFocusRenderer}
             onRequestConfirm={() => {
-              setFocusOpen(false);
+              closeFocus();
               // The gate is the only place a plan is committed, and it is the
               // only place the human reason is recorded. The focus page sends the
               // player there instead of growing a second confirm path.
@@ -277,15 +367,19 @@ export function App() {
             onFindBottleneck={() => void runTool("find_bottleneck")}
             onCompare={() => withRecommendation((plan) => void runTool("compare_plans", { schedule: plan.schedule }))}
             onStageProposal={() => withRecommendation((plan) => void runTool("stage_schedule", { schedule: plan.schedule, reason: plan.reason, expectedRevision: state.revision }))}
-            onStage={() => void runTool("stage_schedule", { schedule: state.schedule, reason: state.playerReason, expectedRevision: state.revision })}
+            onStage={stageHumanPlan}
             onUndo={() => { if (state.activeReceipt) void runTool("undo_schedule", { receiptId: state.activeReceipt.id, expectedRevision: state.revision }); }}
-            onDisruption={() => { if (showTransition(applyDisruption(state))) setNotice({ tone: "error", text: "Condition changed: one dispatch berth is offline. Re-audit the schedule." }); }}
-            onRestart={() => { commit(resetRound(state)); setEvents([]); setNotice({ tone: "info", text: `Round ${state.roundNumber + 1} is ready.` }); }}
+            onDisruption={() => { if (showTransition(applyDisruption(state))) setNotice({ tone: "error", text: `Condition changed: ${state.scenario.disruption.clause}. Re-audit the schedule.` }); }}
+            onRestart={restartRound}
+            shifts={shifts}
+            onStartShift={beginShift}
+            onCloseShift={closeCurrentShift}
+            onReviewShift={() => setResultOpen(true)}
             onReasonChange={(reason) => commit(setPlayerReason(state, reason))}
             onPendingReasonChange={(reason) => { const next = updatePendingReason(state, reason); if (next.ok) commit(next.state); }}
             onConfirm={confirm}
             onReject={() => showTransition(rejectPending(state))}
-            onOpenFocus={() => { setFocusOpen(true); window.scrollTo({ top: 0, behavior: "auto" }); }}
+            onOpenFocus={openFocus}
           />
         )}
       </main>
@@ -302,6 +396,16 @@ export function App() {
       )}
 
       {guideOpen && <GuideModal scenario={state.scenario} onClose={() => setGuideOpen(false)} />}
+      {resultOpen && state.resultCard && (
+        <ResultCardModal
+          card={state.resultCard}
+          shifts={shifts}
+          results={state.results}
+          onStartShift={(next) => { setResultOpen(false); beginShift(next); }}
+          onReplay={() => { setResultOpen(false); restartRound(); }}
+          onClose={() => setResultOpen(false)}
+        />
+      )}
       {notice && <Notice tone={notice.tone} text={notice.text} onDismiss={() => setNotice(undefined)} />}
     </div>
   );
@@ -324,7 +428,20 @@ function Header({ brief, focus, rendererState, round, registration, onEnter, onO
   onOverview: () => void;
   onGuide: () => void;
 }) {
-  const native = registration.phase === "registered";
+  // This pill used to read "Native tools" whenever registration completed, which overstated
+  // what had happened: every registry this project has ever registered against was a script
+  // that defined `document.modelContext`, and a page cannot tell that apart from a browser's
+  // own. It now reports the registry it found, and says so when the registry declared itself
+  // a test double, so a screenshot cannot be mistaken for native-client evidence.
+  const registered = registration.phase === "registered";
+  const surface =
+    registration.provenance === "absent"
+      ? "Local simulation"
+      : registration.provenance === "test-double"
+        ? "Scripted test tools"
+        : registered
+          ? "Tools registered"
+          : "Registering tools…";
   return (
     <header className={`shell__head shell__head--${brief ? "brief" : focus ? "focus" : "arena"}`}>
       {/* On the focus page the wordmark is a real way back, not an anchor to a section
@@ -361,8 +478,8 @@ function Header({ brief, focus, rendererState, round, registration, onEnter, onO
           ) : (
             <>
               <span className="round">Round <b>{String(round).padStart(2, "0")}</b></span>
-              <span className={`pill${native ? " pill--mint" : ""}`}>
-                <i />{native ? "Native tools" : "Local simulation"}
+              <span className={`pill${registered ? " pill--mint" : ""}`}>
+                <i />{surface}
               </span>
             </>
           )}

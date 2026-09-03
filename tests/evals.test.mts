@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TOOL_SPECS } from "../src/tools/webmcp.ts";
+import { scenario } from "../src/data/fixtures.ts";
+import { toolSpecs } from "../src/tools/webmcp.ts";
 import { runEval, scorecard, type EvalRun } from "./evals/harness.mts";
 import { TASKS, blind, hopeful, readsFirst, rollback } from "./evals/suite.mts";
 
@@ -21,7 +22,7 @@ const MATRIX: { task: string; solver: typeof blind; expect: boolean }[] = [
   { task: "roll-it-back", solver: readsFirst, expect: false },
 ];
 
-test("an agent with nothing but the six tools can read this board, fix it, and never commit it", async () => {
+test("an agent with nothing but the eight tools can read this board, fix it, and never commit it", async () => {
   const runs: EvalRun[] = [];
   const expected = new Map<string, boolean>();
 
@@ -90,9 +91,12 @@ test("nothing a write tool requires is invisible to a read tool", async () => {
     into.add(String(value));
     return into;
   };
-  const readOnly = (tool: string) => TOOL_SPECS.find((spec) => spec.name === tool)?.readOnly === true;
+  // The opening shift's catalogue: the eval suite runs on it, and boardReadOnly is a
+  // property of the tool rather than of the shift it was built for.
+  const specs = toolSpecs(scenario);
+  const boardReadOnly = (tool: string) => specs.find((spec) => spec.name === tool)?.boardReadOnly === true;
   const requiredOf = (tool: string) =>
-    ((TOOL_SPECS.find((spec) => spec.name === tool)?.inputSchema as { required?: string[] })?.required ?? [])
+    ((specs.find((spec) => spec.name === tool)?.inputSchema as { required?: string[] })?.required ?? [])
       .filter((key) => !authored.has(key));
 
   const runs = [
@@ -105,7 +109,7 @@ test("nothing a write tool requires is invisible to a read tool", async () => {
     const known = new Set<string>();
     for (const call of run.calls) {
       if (!call.ok) continue;
-      if (readOnly(call.tool)) { scalars(call.data, known); continue; }
+      if (boardReadOnly(call.tool)) { scalars(call.data, known); continue; }
       exercised.add(call.tool);
       for (const key of requiredOf(call.tool)) {
         assert.ok(

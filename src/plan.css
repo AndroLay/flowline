@@ -3,7 +3,7 @@
 
 /* The job's own colour, and only that. A verdict is drawn on top of it — gold hatch for
    at risk, coral fill for late — so identity and outcome can never be the same signal.
-   Every one of the four is light enough to carry the same dark ink, which is what keeps a
+   Every one of the five is light enough to carry the same dark ink, which is what keeps a
    hatched bar readable whichever job is under it. */
 .chip--ice,
 .slab--ice,
@@ -35,6 +35,14 @@
 .sw--cobalt {
   --tint: var(--cobalt);
   --tint-ink: #050f2e;
+}
+
+.chip--quartz,
+.slab--quartz,
+.tl__bar--quartz,
+.sw--quartz {
+  --tint: var(--quartz);
+  --tint-ink: #2e0726;
 }
 
 .board {
@@ -79,6 +87,42 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
+}
+
+/* The intake sentence is a full-width row in both layouts: in the dense one it would
+   otherwise land in the label's column and push the chips onto a line of their own. */
+.queue__intake-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.queue__intake-note b {
+  color: var(--ink);
+}
+
+.queue__intake-note i {
+  font-family: var(--mono);
+  font-style: normal;
+  color: var(--ink);
+}
+
+/* The arrival slot, standing beside its chip. Monospace and quiet: it is a constraint the
+   player has to read while dragging, not a verdict competing with the bar colours. */
+.queue__intake {
+  display: grid;
+  place-items: center;
+  padding: 0 6px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-sm);
+  background: rgb(1 12 20 / 0.7);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  flex: none;
 }
 
 .queue__list {
@@ -496,6 +540,14 @@
 
 .tl__tick.is-deadline {
   color: var(--coral);
+}
+
+/* Columns the plan needed but the shift does not have. They are dimmed and italic so the
+   ruler still reads as ending at the horizon, while the work drawn out there is visible
+   rather than clipped. */
+.tl__tick.is-overtime {
+  font-style: italic;
+  color: var(--ink-3);
 }
 
 .tl__lane-label {
