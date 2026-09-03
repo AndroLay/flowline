@@ -467,3 +467,94 @@ test("a shift closes into a card that agrees with the board, and a closed board 
   assert.deepEqual(next.results.map((result) => result.scenarioId), [shift.id], "the campaign remembers what was closed");
   assert.deepEqual(resetRound(closed).results.map((result) => result.scenarioId), [shift.id], "a replay keeps the cards already earned");
 });
+
+type Metrics = ReturnType<typeof evaluateSchedule>["metrics"];
+
+/**
+ * Which direction each metric improves in, so "better" is never decided at the call site.
+ * `dispatchIdle` is left out on purpose: idle berths are neither good nor bad on their own,
+ * and a metric with no agreed direction cannot take part in a dominance argument.
+ */
+const LOWER_IS_BETTER = ["tardyJobs", "makespan", "totalWaiting", "totalIntakeWait", "prepStarved", "criticalTardiness"] as const;
+const HIGHER_IS_BETTER = ["completedJobs", "onTimeJobs", "score"] as const;
+
+function betterOn(a: Metrics, b: Metrics): string[] {
+  return [...LOWER_IS_BETTER.filter((key) => a[key] < b[key]), ...HIGHER_IS_BETTER.filter((key) => a[key] > b[key])];
+}
+
+/** The two orders a shift ships with, measured in the same condition. */
+function pair(shift: (typeof shifts)[number], condition: "normal" | "shock"): { fast: Metrics; robust: Metrics } {
+  const options =
+    condition === "shock"
+      ? { dispatchParallelism: shift.disruption.dispatchParallelism, releaseDelays: shift.disruption.releaseDelays }
+      : {};
+  return {
+    fast: evaluateSchedule(shift, shift.defaultSchedule, options).metrics,
+    robust: evaluateSchedule(shift, shift.robustSchedule, options).metrics,
+  };
+}
+
+test("each shift's fast and robust orders stand in the relation that shift is built to teach", () => {
+  const byId = new Map(shifts.map((shift) => [shift.id, shift]));
+
+  // Shift one is the ramp. The robust order costs nothing there, and that is deliberate: a
+  // first-time player is asked to find the deadline, not to price a trade-off they cannot read yet.
+  const ramp = byId.get("last-dispatch")!;
+  for (const condition of ["normal", "shock"] as const) {
+    const { fast, robust } = pair(ramp, condition);
+    assert.deepEqual(betterOn(fast, robust), [], `nothing may favour the fast order in ${condition} on the ramp shift`);
+    assert.ok(betterOn(robust, fast).length > 0, `the robust order has to be measurably better in ${condition}`);
+  }
+  const rampShock = pair(ramp, "shock");
+  assert.equal(rampShock.fast.criticalOnTime, false, "the ramp shock has to break the fast order's deadline");
+  assert.equal(rampShock.robust.criticalOnTime, true);
+
+  // Shift two is where robustness acquires a price: a slower finish and a longer intake queue in
+  // normal conditions, in exchange for every deadline surviving the lost berth.
+  const priced = byId.get("rolling-intake")!;
+  const pricedNormal = pair(priced, "normal");
+  assert.ok(pricedNormal.fast.makespan < pricedNormal.robust.makespan, "the robust order has to finish later in normal conditions");
+  assert.ok(pricedNormal.fast.totalIntakeWait < pricedNormal.robust.totalIntakeWait, "and hold jobs in intake longer");
+  const pricedShock = pair(priced, "shock");
+  assert.ok(pricedShock.robust.score > pricedShock.fast.score, "the shock has to reverse the ranking");
+  assert.ok(
+    betterOn(pricedShock.fast, pricedShock.robust).includes("makespan"),
+    "and the fast order has to keep its speed advantage after the shock, or the choice collapses",
+  );
+
+  // Shift three prices the same lesson against a late arrival instead of a lost berth.
+  const late = byId.get("night-handover")!;
+  const lateNormal = pair(late, "normal");
+  assert.ok(lateNormal.fast.makespan < lateNormal.robust.makespan, "the robust order has to cost a slot here too");
+  const lateShock = pair(late, "shock");
+  assert.ok(lateShock.robust.score > lateShock.fast.score);
+  assert.ok(lateShock.fast.tardyJobs > 0 && lateShock.robust.tardyJobs === 0, "the late arrival has to make tardiness the visible difference");
+});
+
+test("the campaign prices robustness rather than handing out a strictly better plan", () => {
+  // A shift prices robustness when the fast order is genuinely faster before the shock, buys the
+  // robust order nothing yet, and loses the ranking after it. Without at least one such shift the
+  // game teaches "always pick the robust order", which is not a decision.
+  const priced = shifts.filter((shift) => {
+    const normal = pair(shift, "normal");
+    const shock = pair(shift, "shock");
+    return (
+      betterOn(normal.fast, normal.robust).length > 0 &&
+      betterOn(normal.robust, normal.fast).length === 0 &&
+      shock.robust.score > shock.fast.score
+    );
+  });
+  assert.ok(priced.length >= 2, `at least two shifts must price robustness; priced: ${priced.map((shift) => shift.id).join(", ") || "none"}`);
+
+  // Stronger still: in at least one shift neither order dominates the other even after the shock,
+  // so both plans stay defensible and the player is choosing, not reading off an answer. This is
+  // the shift the "the best plan before the shock is not the best plan after it" scene belongs in.
+  const undominated = priced.filter((shift) => {
+    const shock = pair(shift, "shock");
+    return betterOn(shock.fast, shock.robust).length > 0 && betterOn(shock.robust, shock.fast).length > 0;
+  });
+  assert.ok(
+    undominated.length >= 1,
+    `no shift leaves both orders defensible after the shock, so the trade-off scene would be false: ${priced.map((shift) => shift.id).join(", ")}`,
+  );
+});

@@ -84,7 +84,7 @@ No metric is presented as the moral or universal definition of a good schedule, 
 
 ## Measured outcome of the fixture
 
-Recomputed from `evaluateSchedule` on 2026-09-03 — the same function the board, the tools and the 3D floor read. Every other statement about cost and robustness in this package should agree with this table.
+Recomputed from `evaluateSchedule` on 2026-09-03 — the same function the board, the tools and the 3D floor read. Every other statement about cost and robustness in this package should agree with this table and with the campaign table that follows it.
 
 | Order | Condition | on-time | makespan | waiting | dispatch idle | risk | exactly on its deadline |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
@@ -96,6 +96,21 @@ Recomputed from `evaluateSchedule` on 2026-09-03 — the same function the board
 Read honestly, this fixture does **not** make the learner pay for robustness on any reported metric: in the normal shift the two orders are identical on all six, and under the disruption the robust order is better on every one of them. So the recovery is not a sacrifice, and the lesson is not "robustness costs throughput". What the reorder actually moves is *where the slack sits*: the fast-looking default spends Beacon's last slot, so the deadline that matters is the one with no room left, and losing a berth breaks it. The recovery gives that slot back to Beacon and leaves Relay finishing exactly on its own deadline instead — visible on the timeline as the `at-risk` marker moving from the critical job to a flexible one. The extra slot of makespan (6 → 7) is the berth loss, not the reorder.
 
 That is also why the game states no single answer: **16 of the 24 orders** keep all four jobs on time with one berth offline, and **13 of those tie at makespan 7**, which is the best any order achieves under the disruption. The default order is simply not one of them. A learner who protects Beacon early has found one of thirteen equally good plans, not the plan.
+
+### The other two shifts do make the learner pay — recomputed 2026-09-03
+
+The table above covers shift one only, and shift one is the ramp. Shifts two and three price robustness, which is where the campaign's harder claim actually lives. Same function, same day, `dispatchIdle` omitted because idle berths have no agreed direction:
+
+| Shift | Condition | fast order | robust order | who is better |
+| --- | --- | --- | --- | --- |
+| `rolling-intake` | two berths | makespan 8, intake wait 4, prep starved 0, all 5 on time | makespan 10, intake wait 11, prep starved 2, all 5 on time | **fast**, on three metrics; the robust order buys nothing yet |
+| `rolling-intake` | one berth | 4 / 5 on time, 1 tardy, critical late, score 74 | 5 / 5 on time, 0 tardy, critical on time, score 100 | **neither dominates**: the robust order wins the deadlines, the fast order keeps makespan 9 against 10 |
+| `night-handover` | two berths, Vault arrives on time | makespan 8, all 5 on time | makespan 9, all 5 on time | **fast**, by one slot |
+| `night-handover` | Vault three slots late | 2 / 5 on time, 3 tardy, intake wait 19, score 41 | 5 / 5 on time, 0 tardy, intake wait 8, score 100 | **robust**, on every reported metric |
+
+So the sentence the campaign can defend is precise: in shift one the robust order is free, and in shifts two and three it costs a slower finish and a longer intake queue in normal conditions and repays it when the shock lands. `rolling-intake` is the only shift where both orders stay defensible *after* the shock, which makes it the one place "the best plan before the shock is not the best plan after it" is literally true rather than rhetorical — the scene belongs there, not on the ramp shift, where the robust order is also the better normal plan.
+
+Two tests in `tests/model.test.mts` hold this shape in place: one pins each shift's relation, including the ramp's deliberate absence of a cost, and one fails if no shift prices robustness or if no shift leaves both orders defensible after the shock. If a future fixture edit makes the robust order strictly better everywhere, the second test fails rather than the claim quietly becoming false.
 
 ## Originality boundary
 

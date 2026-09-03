@@ -64,16 +64,18 @@ pnpm install
 
 pnpm dev          # http://127.0.0.1:4178/
 pnpm typecheck    # tsc -b, no emit
-pnpm test         # 41 cases across four modules, and prints the eval scorecard
+pnpm test         # 43 cases across four modules, and prints the eval scorecard
 pnpm build        # tsc -b, then a production build into dist/
 pnpm preview      # serves dist/ on Vite's preview port
 ```
 
 `.github/workflows/pages.yml` declares those same gates on a clean Node 22 runner and a Pages
 deployment of `dist/`. It is the intended path rather than a demonstrated one — the gates above
-were run locally, and the workflow has never executed them: its single attempt failed three
-seconds in, with no runner assigned, so nothing has been deployed by it. The bundle uses a relative
-`base`, so it resolves its own assets from whatever subpath it is served on.
+were run locally, and the workflow has never executed them. Both attempts, one per push, ended in
+four seconds with no runner assigned: an account-level Actions restriction refused the job before
+it started, so the failure says nothing about the workflow and nothing has been deployed by it.
+Until that clears, `pnpm build && pnpm preview` is the honest way to see the built bundle. The
+bundle uses a relative `base`, so it resolves its own assets from whatever subpath it is served on.
 
 ## Game loop
 
@@ -141,6 +143,22 @@ The arena is also the mobile layout, at 390 × 844:
 | `stage_schedule` | prepare a schedule proposal | pending proposal only |
 | `undo_schedule` | prepare an exact rollback from the receipt id `inspect_board` reports | pending proposal only |
 
+Eight is the whole surface and it is not meant to grow. Six of them are the path worth watching, in
+the order a shift actually needs them:
+
+**inspect_board → find_bottleneck → simulate_disruption → compare_plans → stage_schedule →
+undo_schedule.** Read the board, find where it is tight, break it on purpose, weigh the alternative,
+propose one, and keep an exact way back. `list_shifts` and `review_shift` serve the campaign around
+that path — pick a shift, read a closed shift's card — and neither appears in the judge path or the
+video.
+
+Phase decides which of them do anything. Before a shift starts, every read refuses: the runtime
+answers `precondition_failed` in `setup` rather than describing a board that has not opened
+(`src/tools/webmcp.ts:668`). Once it opens, all six reads answer; `stage_schedule` refuses outside
+`planning` and `disrupted`; `undo_schedule` needs a receipt, which only exists after a human has
+confirmed something; and every proposal carries the revision it was built from, so a proposal that
+was true one revision ago is refused rather than applied.
+
 All eight come from one exported `TOOL_SPECS` list in `src/tools/webmcp.ts`, so the schema a client
 reads and the handler that runs cannot drift apart. None of them can confirm anything: committing
 is a human-only control that is deliberately not registered as a tool.
@@ -150,6 +168,15 @@ None of the eight advertises `readOnlyHint` either. All eight register
 visible on the page and a host may use a read-only hint to skip its confirmation prompt. The six
 that never touch the schedule or the revision carry that narrower claim internally, as
 `boardReadOnly` on the spec, asserted in `tests/tools.test.mts` and never sent to a host.
+
+What a "read" writes is worth naming, because it is the reason the annotation looks strict.
+`inspect_board` and its siblings move the shared focus — the station or job the timeline, the floor
+and the 3D scene all highlight — and every call, refusals included, appends one line to the audit
+trace the player can read. Two of them also file `lastAudit`, and `compare_plans` files
+`lastComparison`. None of that changes the schedule or the revision, which is what `boardReadOnly`
+records. The annotation describes the page, not the board, and it is deliberately the less
+flattering of the two: a tool that can move what a human is looking at should not be able to run
+without the human being told.
 
 Every value a write tool requires can be learned from a read. That is asserted on values rather
 than key names by the eval harness in `tests/evals.test.mts`, and it is asserted because it was

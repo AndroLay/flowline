@@ -167,6 +167,24 @@ context are disposed at teardown. The opt-in `?flowline-capture=1` query is only
 local evidence aid that preserves the drawing buffer for screenshots; normal
 production rendering leaves that option disabled.
 
+The rails that make this an enhancement rather than a dependency are in the source, not in
+this document, and each is one line to check:
+
+| rail | where |
+| --- | --- |
+| device pixel ratio capped at 1.25, whatever the display reports | `src/visual/flowline-3d.ts:985` |
+| demand-driven loop: a frame that is offscreen or on a hidden tab returns before it draws | `src/visual/flowline-3d.ts:1444` |
+| paused by `IntersectionObserver` at a 0.05 threshold and by `visibilitychange` | `src/visual/flowline-3d.ts:1508` |
+| no per-frame allocation — vectors are mutated in place and frame times live in a fixed ring | `src/visual/flowline-3d.ts:1430` |
+| repeated geometry drawn as `InstancedMesh`, and every tracked geometry and material disposed | `src/visual/flowline-3d.ts:441`, `:1143`, `:1568` |
+| reduced motion collapses the animation window to zero and settles the floor instantly | `src/ui/FocusView.tsx:71`, `src/visual/flowline-3d.ts:1419` |
+| WebGL refused: the board, the timeline and the audit answer without it | a WebGL-denied browser probe, 23/23 checks, kept in the private release record |
+
+The 2.5D board is the source of truth in the plain sense that it is the only surface the
+domain is required to feed: the 3D floor derives from the same semantic snapshot
+(`src/visual/scene-model.ts`) and adds highlighting — station, bottleneck, causal path — over
+what the timeline already states. Nothing is playable only in 3D.
+
 The internal performance budget is measured separately from correctness. The current
 headless Chromium run — ANGLE/SwiftShader, no GPU, 1440 × 900 desktop and 390 × 844
 mobile — clears ten of its eleven budgets and still does **not** close the performance
