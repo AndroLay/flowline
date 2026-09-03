@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   applyDisruption,
   auditSchedule,
+  comparisonIsCurrent,
   confirmPending,
   createInitialState,
   enterArena,
   evaluateSchedule,
+  recommendSchedule,
   rejectPending,
   reorderJob,
   resetRound,
@@ -15,13 +17,14 @@ import {
   type FocusTarget,
   type GameState,
   type JobId,
+  type PlanRecommendation,
   type ToolEvent,
 } from "./domain/model.ts";
 import { createFlowlineRuntime, type FlowlineRuntime, type RegistrationSnapshot } from "./tools/webmcp.ts";
 import { deriveSceneModel } from "./visual/scene-model.ts";
 import { ArenaPage } from "./ui/ArenaPage.tsx";
 import { BriefPage } from "./ui/BriefPage.tsx";
-import { FocusView } from "./ui/FocusView.tsx";
+import { FocusView, type RendererState } from "./ui/FocusView.tsx";
 import { BootScreen, GuideModal, Notice } from "./ui/Overlays.tsx";
 import type { ShiftMode } from "./ui/PlanBoard.tsx";
 
@@ -40,11 +43,11 @@ const EMPTY_REGISTRATION: RegistrationSnapshot = {
 
 function transitionOrNotice(
   transition: { ok: true; state: GameState } | { ok: false; error: { message: string } },
-  setState: Dispatch<SetStateAction<GameState>>,
+  commit: (state: GameState) => void,
   setNotice: Dispatch<SetStateAction<NoticeState | undefined>>,
 ) {
   if (transition.ok) {
-    setState(transition.state);
+    commit(transition.state);
     return true;
   }
   setNotice({ tone: "error", text: transition.error.message });
@@ -60,12 +63,22 @@ export function App() {
   const [notice, setNotice] = useState<NoticeState>();
   const [guideOpen, setGuideOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [focusRenderer, setFocusRenderer] = useState<RendererState>("loading");
   const [mode, setMode] = useState<ShiftMode>("normal");
   const [selectedJobId, setSelectedJobId] = useState<JobId>("beacon");
   const stateRef = useRef(state);
   const eventSequence = useRef(0);
 
-  stateRef.current = state;
+  /**
+   * The one way the board changes. React applies `setState` on its own schedule, so a
+   * tool call that runs before the next render would otherwise read the board as it
+   * was before the call in front of it — the ref advances with the same value React
+   * will render, which is the contract the runtime's `readState` relies on.
+   */
+  const commit = useCallback((next: GameState) => {
+    stateRef.current = next;
+    setState(next);
+  }, []);
 
   useEffect(() => {
     const startedAt = performance.now();
@@ -83,7 +96,7 @@ export function App() {
   useEffect(() => {
     const nextRuntime = createFlowlineRuntime({
       readState: () => stateRef.current,
-      writeState: (nextState) => setState(nextState),
+      writeState: commit,
       emit: (event) => {
         const id = `tool-${++eventSequence.current}`;
         setEvents((current) => [...current, { ...event, id, at: new Date().toISOString() }].slice(-9));
@@ -95,7 +108,7 @@ export function App() {
     return () => {
       void nextRuntime.cleanup();
     };
-  }, []);
+  }, [commit]);
 
   useEffect(() => {
     if (!notice) return undefined;
@@ -109,26 +122,42 @@ export function App() {
   // One shift condition drives every surface: a shock is either committed by the
   // scenario or previewed by the switch, never invented per panel.
   const shocked = state.shockApplied || mode === "stress";
+  // Both plans are judged under the same shift, so the live strip and the ghost
+  // strip stay comparable: a previewed shock must not quietly give the proposal a
+  // berth the committed plan has lost.
+  const shiftParallelism = shocked ? state.scenario.disruption.dispatchParallelism : 2;
   const displayEvaluation = useMemo(
-    () => evaluateSchedule(state.scenario, state.schedule, { dispatchParallelism: shocked ? state.scenario.disruption.dispatchParallelism : 2 }),
-    [shocked, state.scenario, state.schedule],
+    () => evaluateSchedule(state.scenario, state.schedule, { dispatchParallelism: shiftParallelism }),
+    [shiftParallelism, state.scenario, state.schedule],
   );
   const derivedAudit = useMemo(() => auditSchedule(state.scenario, state.schedule), [state.scenario, state.schedule]);
   const audit = state.lastAudit ?? derivedAudit;
+  // The auditor's candidate, searched from the order that is actually on the board rather
+  // than read from the scenario's worked example. It is undefined exactly when the board
+  // is already the best plan available, which is the state a player reaches by solving
+  // the round — and the one case where an agent has nothing to propose.
+  const recommendation = useMemo(() => recommendSchedule(state.scenario, state.schedule), [state.scenario, state.schedule]);
+  // The ghost strip only ever draws an order nobody has committed: a staged
+  // proposal, else the candidate the agent last compared, and that one only while
+  // the comparison still describes the plan on the board. Both go through the same
+  // evaluation at the same shift as the live strip, so the ghost is never handed a
+  // berth the committed plan has lost.
   const ghost = useMemo(() => {
-    if (state.pendingProposal) {
-      return evaluateSchedule(state.scenario, state.pendingProposal.schedule, { dispatchParallelism: state.shockApplied ? 1 : 2 });
-    }
-    const compared = state.lastAudit?.baseline;
-    return compared && compared.schedule.join(",") !== state.schedule.join(",") ? compared : undefined;
-  }, [state.lastAudit, state.pendingProposal, state.scenario, state.schedule, state.shockApplied]);
+    const candidate = state.pendingProposal
+      ? state.pendingProposal.schedule
+      : comparisonIsCurrent(state)
+        ? state.lastComparison?.schedule
+        : undefined;
+    if (!candidate) return undefined;
+    return evaluateSchedule(state.scenario, candidate, { dispatchParallelism: shiftParallelism });
+  }, [shiftParallelism, state]);
   const sceneModel = useMemo(
     () => deriveSceneModel(state, displayEvaluation, { ghostEvaluation: ghost }),
     [displayEvaluation, ghost, state],
   );
 
   function showTransition(transition: Parameters<typeof transitionOrNotice>[0]) {
-    return transitionOrNotice(transition, setState, setNotice);
+    return transitionOrNotice(transition, commit, setNotice);
   }
 
   async function runTool(name: string, input: Record<string, unknown> = {}) {
@@ -145,9 +174,26 @@ export function App() {
     if (next === "stress" && state.phase !== "setup" && !state.shockApplied) void runTool("simulate_disruption");
   }
 
-  function moveJob(index: number, direction: -1 | 1) {
-    if (showTransition(reorderJob(state, index, index + direction))) {
-      setSelectedJobId(state.schedule[index]);
+  /**
+   * An agent tool call that only makes sense when the auditor actually found something
+   * better. Refusing here, in words, beats calling the tool with the order the board is
+   * already running: the trace would fill with plans identical to the committed one, and
+   * the ghost strip would draw a second copy of the live timeline.
+   */
+  function withRecommendation(run: (plan: PlanRecommendation) => void) {
+    if (!recommendation) {
+      setNotice({ tone: "info", text: "The auditor has nothing better to offer: this order already holds the critical deadline with a berth offline." });
+      return;
+    }
+    run(recommendation);
+  }
+
+  // One call for every way the queue can be reordered — the arrows, the arrow keys and a
+  // dragged chip all land here, so a drag cannot reach a state the buttons cannot.
+  function reorderQueue(from: number, to: number) {
+    const moved = state.schedule[from];
+    if (showTransition(reorderJob(state, from, to))) {
+      setSelectedJobId(moved);
       setNotice({ tone: "info", text: "Schedule revised. Run the audit again against the new revision." });
     }
   }
@@ -167,15 +213,19 @@ export function App() {
     }
   }
   const brief = state.phase === "setup";
+  const focus = focusOpen && !brief;
   if (!bootReady) return <BootScreen progress={bootProgress} onSkip={() => setBootReady(true)} />;
 
   return (
-    <div className={`shell${brief ? " shell--brief" : " shell--arena"}`}>
+    <div className={`shell${brief ? " shell--brief" : focus ? " shell--focus" : " shell--arena"}`}>
       <Header
         brief={brief}
+        focus={focus}
+        rendererState={focusRenderer}
         round={state.roundNumber}
         registration={registration}
         onEnter={() => { showTransition(enterArena(state)); window.scrollTo({ top: 0, behavior: "auto" }); }}
+        onOverview={() => setFocusOpen(false)}
         onGuide={() => setGuideOpen(true)}
       />
 
@@ -190,84 +240,99 @@ export function App() {
             onSelectJob={setSelectedJobId}
             onEnter={() => { showTransition(enterArena(state)); window.scrollTo({ top: 0, behavior: "auto" }); }}
           />
+        ) : focus ? (
+          <FocusView
+            model={sceneModel}
+            scenario={state.scenario}
+            evaluation={displayEvaluation}
+            focus={state.focus}
+            ghostEvaluation={ghost}
+            onFocus={(target: FocusTarget) => { commit(setFocus(state, target)); if (target.jobId) setSelectedJobId(target.jobId); }}
+            onClose={() => setFocusOpen(false)}
+            onRendererState={setFocusRenderer}
+            onRequestConfirm={() => {
+              setFocusOpen(false);
+              // The gate is the only place a plan is committed, and it is the
+              // only place the human reason is recorded. The focus page sends the
+              // player there instead of growing a second confirm path.
+              window.requestAnimationFrame(() => document.getElementById("auditor-title")?.scrollIntoView({ block: "start" }));
+            }}
+          />
         ) : (
           <ArenaPage
             state={state}
             evaluation={displayEvaluation}
             audit={audit}
             ghost={ghost}
+            recommendation={recommendation}
             registration={registration}
             events={events}
             mode={mode}
             onMode={changeMode}
             selectedJobId={selectedJobId}
             onSelectJob={setSelectedJobId}
-            onMove={moveJob}
+            onReorder={reorderQueue}
             onInspect={() => void runTool("inspect_board")}
             onSimulate={() => { setMode("stress"); void runTool("simulate_disruption"); }}
             onFindBottleneck={() => void runTool("find_bottleneck")}
-            onCompare={() => void runTool("compare_plans", { schedule: state.scenario.robustSchedule })}
-            onStageProposal={() => void runTool("stage_schedule", { schedule: state.scenario.robustSchedule, reason: state.playerReason, expectedRevision: state.revision })}
-            onStage={() => void runTool("stage_schedule", { schedule: state.phase === "disrupted" ? state.scenario.robustSchedule : state.schedule, reason: state.playerReason, expectedRevision: state.revision })}
+            onCompare={() => withRecommendation((plan) => void runTool("compare_plans", { schedule: plan.schedule }))}
+            onStageProposal={() => withRecommendation((plan) => void runTool("stage_schedule", { schedule: plan.schedule, reason: plan.reason, expectedRevision: state.revision }))}
+            onStage={() => void runTool("stage_schedule", { schedule: state.schedule, reason: state.playerReason, expectedRevision: state.revision })}
             onUndo={() => { if (state.activeReceipt) void runTool("undo_schedule", { receiptId: state.activeReceipt.id, expectedRevision: state.revision }); }}
             onDisruption={() => { if (showTransition(applyDisruption(state))) setNotice({ tone: "error", text: "Condition changed: one dispatch berth is offline. Re-audit the schedule." }); }}
-            onRestart={() => { setState(resetRound(state)); setEvents([]); setNotice({ tone: "info", text: `Round ${state.roundNumber + 1} is ready.` }); }}
-            onReasonChange={(reason) => setState(setPlayerReason(state, reason))}
-            onPendingReasonChange={(reason) => { const next = updatePendingReason(state, reason); if (next.ok) setState(next.state); }}
+            onRestart={() => { commit(resetRound(state)); setEvents([]); setNotice({ tone: "info", text: `Round ${state.roundNumber + 1} is ready.` }); }}
+            onReasonChange={(reason) => commit(setPlayerReason(state, reason))}
+            onPendingReasonChange={(reason) => { const next = updatePendingReason(state, reason); if (next.ok) commit(next.state); }}
             onConfirm={confirm}
             onReject={() => showTransition(rejectPending(state))}
-            onOpenFocus={() => setFocusOpen(true)}
+            onOpenFocus={() => { setFocusOpen(true); window.scrollTo({ top: 0, behavior: "auto" }); }}
           />
         )}
       </main>
 
-      <footer className="shell__foot">
-        <span>Flowline © 2026<br />Operations lab</span>
-        <span className="shell__foot-note">All jobs and outcomes are synthetic · no external requests · no automatic confirmation</span>
-        <span>Built for practice. Designed for trust.</span>
-      </footer>
+      {/* The focus mock has no footer band: the floor, its rails and the two plan
+          strips own the viewport, and the way back out is the rail's own control.
+          Keeping the band here is also what pushed that page 57px past the fold. */}
+      {!focus && (
+        <footer className="shell__foot">
+          <span className="shell__foot-mark"><b>Flowline © 2026</b><small>Operations lab</small></span>
+          <span className="shell__foot-note">All jobs and outcomes are synthetic · no external requests · no automatic confirmation</span>
+          <span>Built for practice. Designed for trust.</span>
+        </footer>
+      )}
 
       {guideOpen && <GuideModal scenario={state.scenario} onClose={() => setGuideOpen(false)} />}
-      {focusOpen && (
-        <FocusView
-          model={sceneModel}
-          onFocus={(focus: FocusTarget) => setState(setFocus(state, focus))}
-          onClose={() => setFocusOpen(false)}
-        />
-      )}
       {notice && <Notice tone={notice.tone} text={notice.text} onDismiss={() => setNotice(undefined)} />}
     </div>
   );
 }
-function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="3.1" />
-      <path d="M12 3.2v2.3M12 18.5v2.3M4.8 12H2.5M21.5 12h-2.3M6.9 6.9 5.3 5.3M18.7 18.7l-1.6-1.6M17.1 6.9l1.6-1.6M5.3 18.7l1.6-1.6" />
-    </svg>
-  );
-}
-
 /**
- * One header for both pages. Every nav item does something: the current page is
- * marked, the other one is reachable, and Guide opens the field guide. Nothing is
- * a decorative label. The brief keeps only the wordmark and the nav; the arena
- * adds the round counter and the bridge pill, which reports what the runtime
- * actually registered rather than what the demo would like to claim.
+ * One header for every page. Every nav item does something: the current page is
+ * marked, the others are reachable, and Guide opens the field guide. Nothing is a
+ * decorative label. The brief keeps only the wordmark and the nav; the arena adds
+ * the round counter and the bridge pill, which reports what the runtime actually
+ * registered rather than what the demo would like to claim. The focus page swaps
+ * that pill for the renderer's real state, so "WebGL active" is never a guess.
  */
-function Header({ brief, round, registration, onEnter, onGuide }: {
+function Header({ brief, focus, rendererState, round, registration, onEnter, onOverview, onGuide }: {
   brief: boolean;
+  focus: boolean;
+  rendererState: RendererState;
   round: number;
   registration: RegistrationSnapshot;
   onEnter: () => void;
+  onOverview: () => void;
   onGuide: () => void;
 }) {
   const native = registration.phase === "registered";
   return (
-    <header className={`shell__head shell__head--${brief ? "brief" : "arena"}`}>
-      <a className="lockup" href={brief ? "#brief" : "#arena"}>
+    <header className={`shell__head shell__head--${brief ? "brief" : focus ? "focus" : "arena"}`}>
+      {/* On the focus page the wordmark is a real way back, not an anchor to a section
+          that is not on the page while the lens is open. The exit standing in the floor's
+          own sky is the other one, and there is no third. */}
+      <a className="lockup" href={brief ? "#brief" : "#arena"} onClick={focus ? onOverview : undefined}>
         <b className="wordmark">Flow<span>line</span></b>
-        <small>Operations lab / WebMCP learning game</small>
+        <small>Operations lab / {focus ? "focus view" : "WebMCP learning game"}</small>
       </a>
 
       <nav className="shell__nav" aria-label="Sections">
@@ -276,6 +341,8 @@ function Header({ brief, round, registration, onEnter, onGuide }: {
             <a href="#brief" aria-current="page">Brief</a>
             <button type="button" onClick={onEnter}>Arena</button>
           </>
+        ) : focus ? (
+          <a href="#focus" aria-current="page">Focus</a>
         ) : (
           <>
             <a href="#arena" aria-current="page">Gameplay</a>
@@ -287,13 +354,18 @@ function Header({ brief, round, registration, onEnter, onGuide }: {
 
       {!brief && (
         <div className="shell__status">
-          <span className="round">Round <b>{String(round).padStart(2, "0")}</b></span>
-          <span className={`pill${native ? " pill--mint" : ""}`}>
-            <i />{native ? "Native tools" : "Local simulation"}
-          </span>
-          <button className="icon-btn" type="button" onClick={onGuide} aria-label="Open the field guide">
-            <GearIcon />
-          </button>
+          {focus ? (
+            <span className={`pill${rendererState === "ready" ? " pill--mint" : rendererState === "fallback" ? " pill--coral" : ""}`}>
+              <i />{rendererState === "ready" ? "WebGL active · fallback available" : rendererState === "fallback" ? "Fallback active · WebGL unavailable" : "Starting renderer…"}
+            </span>
+          ) : (
+            <>
+              <span className="round">Round <b>{String(round).padStart(2, "0")}</b></span>
+              <span className={`pill${native ? " pill--mint" : ""}`}>
+                <i />{native ? "Native tools" : "Local simulation"}
+              </span>
+            </>
+          )}
         </div>
       )}
     </header>

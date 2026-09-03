@@ -1,130 +1,223 @@
-# Flowline
+# Flowline — a scheduling game where the agent advises and only you commit
 
-Flowline is a small WebMCP learning game about operational scheduling.
+[![React](https://img.shields.io/badge/React-19.2-149eca)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9%20strict-3178c6)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-7.3-646cff)](https://vite.dev)
+[![three.js](https://img.shields.io/badge/three.js-0.180%20lazy-333333)](https://threejs.org)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A5%2022.6-5fa04e)](https://nodejs.org)
+[![WebMCP tools](https://img.shields.io/badge/WebMCP%20tools-6-7c5cff)](#webmcp-surface)
+[![License](https://img.shields.io/badge/License-MIT-2f855a)](./LICENSE)
+
+Flowline is a **deterministic operations game with a page-aware agent surface**. Six WebMCP
+tools let an assistant read the live board, name the bottleneck, stress-test the running order
+and stage a fix; the revision only ever moves when a human clicks confirm.
 
 > A schedule can look efficient until the floor changes.
 
-The player orders four fictional jobs through a preparation bay and a dispatch bay. A page-aware Operations Auditor reads the live board, finds the bottleneck, runs a deterministic disruption test, and stages a recovery proposal. The player owns the trade-off: only the human can confirm or undo a plan.
+![The 2.5D arena in the planning phase](./docs/images/arena-planning.png)
 
-## Status
+*A capture of the built application at 1440 × 900. The board is synthetic fixture data, and the
+app labels it as such.*
 
-This is an isolated V2 deterministic spike and the Flowline submission track. It is
-separate from `../withheld`; the old `needs-and-means` placeholder is not an active
-submission. The Flowline name and final publication status remain subject to the owner's
-final decision.
+---
 
-Completed in this spike:
+## What works
 
-- playable setup → planning → confirmation → disruption → recovery → exact undo flow;
-- deterministic two-machine schedule simulator;
-- six page-state and revision-aware WebMCP tools;
-- strict human confirmation boundary;
-- stale, invalid, duplicate, wrong-phase, and recovery guards;
-- skippable boot screen and operations control-room entry dashboard;
-- responsive dark arena UI with a visible shared timeline;
-- optional lazy-loaded Three.js focus layer with one reusable low-poly scene;
-- state-parity adapter for the 2.5D timeline, semantic inspector, ghost proposal,
-  disruption overlay, guided focus, and WebGL fallback;
-- guide modal with keyboard focus handling;
-- model, tool contract, and scene-model parity tests;
-- local Chromium evidence for lazy loading, responsive layout, renderer cleanup,
-  and repeated active-frame samples.
+Everything below has been run against the current build on a developer machine. No part of it
+depends on a server, an account or a network call.
 
-Not claimed yet:
+- the whole loop — setup → planning → confirmation → disruption → recovery → exact undo;
+- a deterministic two-station simulator, exhaustive over all 24 job orders;
+- six page-state and revision-aware tools, with stale, invalid, duplicate, wrong-phase and
+  recovery guards;
+- a human confirmation boundary no tool can cross. Over one continuous 38-step session, 28 tool
+  calls moved the revision zero times, while the revision itself went 2 → 6 on human clicks
+  alone;
+- an eval harness that scores the tool surface rather than a model — five tasks, eight
+  solver/task rows, three of which are required to fail;
+- a 2.5D arena and an optional lazy three.js floor derived from the same evaluation, plus a
+  labelled text floor when WebGL is unavailable.
 
-- hosted public URL;
-- agent-native natural-language replay on a target client;
-- user-learning study or adoption validation;
-- final Devpost submission.
+## What is not claimed
 
-## Run locally
+- **A model has never driven this page.** Nothing here shows a real client discovering these
+  tools, or a model choosing one of them from a sentence.
+- **Performance on real hardware, in either direction.** Every frame figure ever measured for
+  this project came from a headless software rasteriser, and opening the 3D floor costs a long
+  task on one.
+- **Validation by a non-author.** Nobody outside the project has played it and been asked what
+  they learned.
 
-From the root of this repository:
+## Quick start
 
 ```bash
+# Node >= 22.6 — the package's own `engines` — and pnpm
 pnpm install
-pnpm dev
+
+pnpm dev          # http://127.0.0.1:4178/
+pnpm typecheck    # tsc -b, no emit
+pnpm test         # 30 cases across four modules, and prints the eval scorecard
+pnpm build        # tsc -b, then a production build into dist/
+pnpm preview      # serves dist/ on Vite's preview port
 ```
 
-The Vite development server uses `http://127.0.0.1:4178/` by default. When this
-package is checked out inside the parent WebMCP workspace, the equivalent command
-is `pnpm --filter flowline dev`.
-
-Validation commands:
-
-```bash
-pnpm typecheck
-pnpm test
-pnpm build
-```
+`.github/workflows/pages.yml` runs those same gates on a clean Node 22 runner and publishes
+`dist/` to GitHub Pages. The bundle uses a relative `base`, so it resolves its own assets from
+whatever subpath it is served on.
 
 ## Game loop
 
 1. Enter the operations floor.
-2. Order Pantry, Archive, Beacon, and Relay.
-3. Ask the Operations Auditor to inspect the board, find a bottleneck, and stress-test the current order.
-4. Stage a plan with a human reason; the proposal remains pending.
-5. Confirm the plan yourself.
-6. Reveal the deterministic event: Dispatch Bay loses one berth.
-7. Move the deadline-critical Beacon earlier, stage a recovery plan, and confirm it.
-8. Inspect the visible outcome and optionally prepare an exact rollback.
+2. Order Pantry, Archive, Beacon and Relay.
+3. Ask the Operations Auditor to inspect the board, find the bottleneck, and stress-test the
+   order you have.
+4. Stage a plan with a human reason. The proposal stays pending.
+5. Confirm it yourself.
+6. Meet the deterministic event: the dispatch bay loses one berth.
+7. Move the deadline-critical Beacon earlier, stage a recovery, confirm it.
+8. Read the outcome, and optionally prepare an exact rollback.
 
-The learning objective is narrow and observable: explain why an order that is on time in the normal shift can fail after a capacity disruption, then identify one trade-off in a more robust order.
+The learning objective is narrow and explicit: explain why an order that is on time in the
+normal shift fails after a capacity disruption, then name one trade-off in a more robust order.
+The game does not assess that answer — it requires a written reason at the confirmation gate
+and keeps it on the receipt, and no learner session has been recorded.
+
+| a proposal an agent staged, still pending | the shift after the bay loses a berth |
+| --- | --- |
+| ![A staged proposal awaiting human confirmation](./docs/images/proposal-staged.png) | ![The board after the deterministic disruption](./docs/images/disruption.png) |
+
+The left-hand capture was produced by calling `stage_schedule` from outside the page. The
+proposal sits there, unconfirmed, which is the whole point.
 
 ## Visual layers
 
-The 2.5D DOM/CSS overview is the actual game surface. It shows the queue, two
-stations, timeline, deadlines, metrics, audit trail, proposal, confirmation, and
-recovery controls. The full 3D view is an optional explanation layer opened from
-the floor map; it magnifies the focused station, queue, handoff, deadline, and
-disruption using the same `ScheduleEvaluation`.
+The 2.5D DOM/CSS arena is the game. It carries the queue, both stations, the shared timeline,
+deadlines, metrics, the audit trail, the staged proposal and the human controls. The 3D floor is
+an optional explanation layer opened from the floor map: it magnifies one station, the handoff,
+the deadline and the disruption out of the same `ScheduleEvaluation`, offers four camera presets
+and five zoom steps, and walks the shift slot by slot.
 
-Three.js is dynamically imported only when the focus view opens. The renderer uses
-one scene/camera/renderer, procedural geometry, capped pixel ratio, demand-driven
-rendering, and teardown disposal. If WebGL cannot be created, the focus panel
-reports a 2D fallback and the complete timeline remains playable. The optional
-`?flowline-capture=1` URL flag is only for local screenshot evidence and is not
-needed for normal operation.
+| the floor when WebGL works | the floor when it does not |
+| --- | --- |
+| ![The 3D floor, renderer ready](./docs/images/floor-3d.png) | ![The same floor with WebGL denied](./docs/images/floor-webgl-fallback.png) |
+
+three.js is `import()`ed only when the focus view opens, so no 3D resource is requested before
+that click. The renderer keeps one scene, procedural geometry, a capped pixel ratio, a
+demand-driven frame loop, and disposal on teardown. Every word on the floor is DOM text anchored
+to a projected world point, which is why label collisions are measured rather than eyeballed.
+When a WebGL context cannot be created the floor degrades to a labelled text floor listing every
+stand, both berths, the deadline and the shift clock — the plan stays playable in 2D, and the six
+tools keep answering. `?flowline-capture=1` exists only for local screenshot capture.
+
+The arena is also the mobile layout, at 390 × 844:
+
+<img src="./docs/images/arena-mobile.png" alt="The arena on a phone-sized viewport" width="300">
 
 ## WebMCP surface
 
 | Tool | Role | State effect |
 | --- | --- | --- |
-| `inspect_board` | read the active schedule, phase, and revision | focus only |
-| `find_bottleneck` | audit the active condition | stores visible audit |
-| `simulate_disruption` | compare normal and one-berth-offline conditions | stores visible audit |
-| `compare_plans` | compare a proposed order without committing it | stores visible audit |
+| `inspect_board` | read the active schedule, phase, revision, and the receipt of the last confirmed plan | focus only |
+| `find_bottleneck` | audit the active condition | stores a visible audit |
+| `simulate_disruption` | compare normal against one-berth-offline | stores a visible audit |
+| `compare_plans` | weigh a proposed order without committing it | files a candidate reading beside the board's own audit |
 | `stage_schedule` | prepare a schedule proposal | pending proposal only |
-| `undo_schedule` | prepare an exact rollback | pending proposal only |
+| `undo_schedule` | prepare an exact rollback from the receipt id `inspect_board` reports | pending proposal only |
 
-The agent cannot confirm a proposal. All state-changing proposals require the human-only confirmation control.
+All six come from one exported `TOOL_SPECS` list in `src/tools/webmcp.ts`, so the schema a client
+reads and the handler that runs cannot drift apart. None of them can confirm anything: committing
+is a human-only control that is deliberately not registered as a tool.
 
-Tool responses remain semantic: revision, phase, job/station IDs, metrics, causal
-path, violations, and available actions. They never accept mesh vertices, texture
-IDs, camera matrices, or arbitrary DOM selectors.
+Every value a write tool requires can be learned from a read. That is asserted on values rather
+than key names by the eval harness in `tests/evals.test.mts`, and it is asserted because it was
+once false — `undo_schedule` wanted a receipt id that nothing on the surface reported.
 
-## Design and evidence docs
+Tool responses stay semantic: revision, phase, job and station ids, metrics, and the causal
+path. They never accept mesh vertices, texture ids, camera matrices or
+DOM selectors. The whole boundary is written out in [`SECURITY.md`](./SECURITY.md).
 
-- [Architecture](./docs/architecture.md)
-- [Game design](./docs/game-design.md)
-- [Challenge adaptation and purpose](./docs/challenge-adaptation.md)
-- [Progress and verification](./docs/progress.md)
-- [Rendering and performance plan](./docs/rendering-and-performance-plan.md)
-- [Rendering performance evidence](./docs/rendering-performance-evidence-2026-09-02.md)
-- [Demo and evidence plan](./docs/demo-and-evidence.md)
-- [Decision log](./docs/decision-log.md)
-- [Visual reference audit](./docs/visual-reference-audit.md)
-- [Target visual images](./docs/target-images/README.md)
+## Project structure
+
+```text
+flowline/
+├── index.html                  # one entry, no router, no server
+├── vite.config.ts              # base "./" so a build works from any subpath
+├── pnpm-workspace.yaml         # one setting: let esbuild run its postinstall
+├── src/
+│   ├── main.tsx                # mount
+│   ├── App.tsx                 # phases: boot → brief → arena → focus
+│   ├── domain/model.ts         # the simulator, the guards, every state transition
+│   ├── data/fixtures.ts        # four fictional jobs, two stations, one deadline
+│   ├── tools/webmcp.ts         # TOOL_SPECS — the six tools and their registration
+│   ├── visual/
+│   │   ├── scene-model.ts      # ScheduleEvaluation → placements, per shift slot
+│   │   └── flowline-3d.ts      # three.js renderer, only ever reached by import()
+│   ├── ui/                     # ArenaPage, BriefPage, PlanBoard, FocusView, Overlays, Tip
+│   └── *.css                   # base, pages, plan, focus — one sheet per surface
+├── tests/
+│   ├── model.test.mts          # transitions, guards, all 24 orders
+│   ├── tools.test.mts          # schemas, strict parsing, native registration
+│   ├── scene-model.test.mts    # 2.5D/3D parity and per-slot placement
+│   ├── evals.test.mts          # the scored tool-surface suite
+│   └── evals/                  # solvers that see only the tools, and the scorer
+├── docs/                       # game design, architecture, challenge adaptation, figures
+├── SECURITY.md                 # the agent boundary
+└── .github/workflows/pages.yml # gates, build, and the Pages deployment
+```
+
+## Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| UI | React 19.2.8. No router, no state library, no component library |
+| Build | Vite 7.3.6 and TypeScript 5.9.3 strict; `tsc -b` runs before every build |
+| 3D | three.js 0.180.0, dynamically imported, procedural geometry only |
+| Agent surface | WebMCP over `document.modelContext`, six tools from one `TOOL_SPECS` list |
+| Tests | `node --test` with `--experimental-strip-types`; no test-framework dependency |
+| Runtime | Node ≥ 22.6, pnpm, static output |
+| Data | Local fixtures. No backend, no network calls, no storage, no telemetry |
+
+## Docs
+
+| doc | what it answers |
+| --- | --- |
+| [Game design](./docs/game-design.md) | the learning objective and the decision the player owns |
+| [Architecture](./docs/architecture.md) | module boundaries, state flow, where the tool layer sits |
+| [Challenge adaptation](./docs/challenge-adaptation.md) | which systems problem this is a game about |
+| [Security and agent boundary](./SECURITY.md) | what a caller can reach, and what is refused |
 
 ## Originality and data boundary
 
-The implementation uses standard scheduling concepts only: ordered jobs, sequential preparation, parallel dispatch capacity, deadlines, waiting, makespan, and a deterministic capacity disruption. It does not use another project's code, solver, challenge input/output, API, visual assets, narrative, or copy. All jobs, constraints, metrics, and outcomes in this package are fictional and local-only.
+The implementation uses standard scheduling concepts only: ordered jobs, sequential preparation,
+parallel dispatch capacity, deadlines, waiting, makespan, and a deterministic capacity
+disruption. It uses no other project's code, solver, challenge input or output, API, visual
+assets, narrative or copy. Every job, constraint, metric and outcome here is fictional and
+local-only.
 
-The game is a learning simulation, not an operational recommendation, fairness oracle, emergency system, or production scheduler.
+Flowline is a learning simulation. It is not an operational recommendation, a fairness oracle, an
+emergency system, or a production scheduler.
 
 ## Verification boundary
 
-The package has local deterministic tests and Chromium browser evidence. Native
-tool registration is separate from genuine natural-language agent replay; the
-latter remains `UNKNOWN` until an authorized target client runs it. Public hosting,
-learner validation, and final submission are also not claimed by this package.
+Three distinctions in this project are load-bearing, and collapsing any of them would overstate
+what has been shown:
+
+- The simulator is a **deterministic recomputation, not a replay.** The same order always
+  recomputes to the same board, but the app records and exports nothing, so no session played in
+  the game can be played back afterwards.
+- **Registering six tools is not a model choosing between them.** The eval harness removes the
+  model on purpose so it can measure the surface instead — a different claim, not a substitute
+  for one.
+- **Every frame figure came from a headless software rasteriser.** It bounds nothing about real
+  hardware in either direction.
+
+The measurement runs behind the numbers in this README — a scripted client driving the page over
+the DevTools protocol, a WebGL-denied probe, per-viewport frame timings, a hosting dry run — are
+kept privately with the scripts that produced them and a hash apiece. They are a record of how
+this was built rather than part of the game, so they are not in this repository. Where a figure
+appears above, the sentence around it says what was measured and what the measurement cannot
+support.
+
+## License
+
+[MIT](./LICENSE). The fixtures, copy and visuals in this package are original to it.

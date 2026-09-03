@@ -1,0 +1,7 @@
+# esbuild is Vite's bundler, and its postinstall links the platform binary. pnpm 11 refuses to
+# ignore a build script silently: without this allowance `pnpm install --frozen-lockfile` exits 1
+# with ERR_PNPM_IGNORED_BUILDS, so a clean clone would fail at its first command. No `packages:`
+# key — this repository is one project, not a workspace, and the file is here only for the
+# setting.
+allowBuilds:
+  esbuild: true

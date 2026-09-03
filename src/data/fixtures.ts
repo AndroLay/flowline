@@ -21,7 +21,6 @@ export const scenario: Scenario = {
       shortLabel: "PREP",
       description: "One crew prepares jobs in sequence.",
       parallelism: 1,
-      tint: "coral",
     },
     {
       id: "dispatch",
@@ -29,7 +28,6 @@ export const scenario: Scenario = {
       shortLabel: "DISPATCH",
       description: "Two berths can move jobs out in parallel.",
       parallelism: 2,
-      tint: "blue",
     },
   ],
   jobs: [
@@ -43,7 +41,7 @@ export const scenario: Scenario = {
       dispatchDuration: 1,
       deadline: 8,
       priority: "standard",
-      tint: "gold",
+      tint: "azure",
     },
     {
       id: "archive",
@@ -55,7 +53,7 @@ export const scenario: Scenario = {
       dispatchDuration: 2,
       deadline: 8,
       priority: "standard",
-      tint: "mint",
+      tint: "violet",
     },
     {
       id: "beacon",
@@ -67,7 +65,7 @@ export const scenario: Scenario = {
       dispatchDuration: 2,
       deadline: 6,
       priority: "critical",
-      tint: "coral",
+      tint: "ice",
     },
     {
       id: "relay",
@@ -79,10 +77,14 @@ export const scenario: Scenario = {
       dispatchDuration: 1,
       deadline: 7,
       priority: "standard",
-      tint: "blue",
+      tint: "cobalt",
     },
   ],
   defaultSchedule: ["pantry", "archive", "beacon", "relay"],
+  // A worked example, not an answer key: the tests and the docs use it as a known-good
+  // order, and nothing in the running game reads it. The auditor's candidate is searched
+  // with `recommendSchedule`, so it stays right because the plan survives the shift rather
+  // than because a fixture said so.
   robustSchedule: ["beacon", "pantry", "archive", "relay"],
   disruption: {
     id: "berth-down",

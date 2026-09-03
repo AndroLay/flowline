@@ -53,8 +53,13 @@ export function BriefPage({ state, evaluation, mode, onMode, selectedJobId, onSe
       <section className="hero" id="brief">
         <div className="hero__copy">
           <span className="dot-label dot-label--mint"><i />The mission</span>
+          {/* Each line is its own element rather than text split by <br>: a hard break
+              leaves no word boundary behind it, so the copied and announced sentence
+              used to read "A fast plan isnot always astrong plan." */}
           <h1>
-            A fast plan is<br />not always a<br /><em>strong plan.</em>
+            <span>A fast plan is</span>
+            <span>not always a</span>
+            <em>strong plan.</em>
           </h1>
           <p className="hero__lede">
             Flowline lets a human arrange a shift, lets an agent stress-test it, and keeps the final decision human.

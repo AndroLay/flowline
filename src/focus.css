@@ -1,0 +1,1497 @@
+/* Flowline — focus layer: the 3D focus page only.
+   Scope rule for this codebase: base.css owns the frame and the primitives,
+   plan.css owns the plan surface, pages.css owns the brief and arena
+   compositions, and this sheet owns the focus page. Nothing here restyles a
+   selector another sheet also sets. */
+
+.focus {
+  /* --blue is a fill colour: printed as a numeral or a name on these dark panels
+     it needs a lighter cast to hold its contrast, and no other sheet needs it. */
+  --sky: #5aa2e0;
+  position: relative;
+  display: grid;
+  grid-template-columns: 259px minmax(0, 1fr) 280px;
+  grid-template-areas: "rail stage auditor";
+  gap: 5px;
+}
+
+/* The left column is one panel now that the way back stands inside the frame, so it
+   ends where its own words end rather than being stretched to the stage beside it. */
+.focus__rail {
+  grid-area: rail;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Nothing spans the width of the page: the plan strips belong to this column,
+   directly under the canvas they explain, so the three columns run the full
+   height and the page ends where the strips end. */
+.focus__stage {
+  grid-area: stage;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The auditor panel is as tall as what it has to say and no taller: stretched to the
+   height of the stage beside it, the frame would promise steps that are not there. */
+.focus__auditor {
+  grid-area: auditor;
+  align-self: start;
+}
+
+.focus__summary,
+.focus__auditor {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+
+/* --- left rail ------------------------------------------------------------ */
+
+.focus__summary-head {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* The rail's mark is drawn rather than typed: the mono stack has no crosshair
+   glyph, and a missing glyph shows as a tofu box. */
+.focus__crosshair {
+  width: 21px;
+  height: 21px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.focus__crosshair circle:last-of-type {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* The head names the bay in full at 15px, which only clears the rail's width once
+   the tracking comes back in: the letter-space that suits a 13px kicker pushes
+   twenty characters past the panel edge. */
+.focus__kicker {
+  letter-spacing: 0.02em;
+}
+
+.focus__rev {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.focus__rev > b {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--mint);
+}
+
+.focus__facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin: 0;
+}
+
+.focus__facts > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.focus__facts > div + div {
+  justify-items: end;
+  text-align: right;
+}
+
+.focus__facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* The selected job is the rail's headline, printed in the job's own tint so the
+   name agrees with the slab it labels in the scene and the chip that carries it
+   in the timeline below. */
+.focus__facts .focus__name {
+  font-size: 31px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: var(--tint, var(--ink-2));
+}
+
+.focus__name.is-ice {
+  --tint: var(--ice);
+}
+
+.focus__name.is-azure {
+  --tint: var(--azure);
+}
+
+.focus__name.is-violet {
+  --tint: var(--violet);
+}
+
+.focus__name.is-cobalt {
+  --tint: var(--cobalt);
+}
+
+/* One box divided by its own hairlines rather than four separate cards: the four
+   numbers are read together, as one instrument. */
+.focus__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel-2);
+}
+
+.focus__metric {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 15px 8px 13px;
+}
+
+.focus__metric:nth-child(even) {
+  border-left: 1px solid var(--line);
+}
+
+.focus__metric:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+
+.focus__metric > span {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--metric, var(--ink-3));
+}
+
+.focus__metric > strong {
+  font-family: var(--mono);
+  font-size: 31px;
+  font-weight: 400;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--metric, var(--ink));
+}
+
+/* The total a count is measured against is context rather than the measurement,
+   so it stays small and grey while the count keeps the tint. */
+.focus__metric > strong small {
+  font-size: 0.6em;
+  color: var(--ink-3);
+}
+
+.focus__metric--mint {
+  --metric: var(--mint);
+}
+
+.focus__metric--gold {
+  --metric: var(--gold);
+}
+
+.focus__metric--blue {
+  --metric: var(--sky);
+}
+
+.focus__metric--coral {
+  --metric: var(--coral);
+}
+
+/* The outcome of the focused job in words, next to the deadline it is measured
+   against: both take the tone the timeline bar uses, so the rail and the strip
+   never disagree about how the job is doing. */
+.focus__state {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.focus__state > div {
+  display: grid;
+  gap: 8px;
+}
+
+.focus__state > div + div {
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.focus__state strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tone, var(--ink));
+}
+
+.focus__warn {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.focus__state.is-on-time {
+  --tone: var(--mint);
+}
+
+.focus__state.is-at-risk {
+  --tone: var(--gold);
+}
+
+.focus__state.is-missed {
+  --tone: var(--coral);
+}
+
+/* The rail's timeline needs no frame of its own: the grid it draws is already a
+   box, and the panel around it is another. */
+.focus__mini {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* One row per job here, so the label column carries a job chip rather than a
+   lane name, and it has to win over the dense default set on the strip itself.
+   54px is what the longest job name needs: ARCHIVE measures 44.1px at this size
+   and the chip keeps an 8px gap before the first slot, so 48px was truncating it
+   to an ellipsis. */
+.focus__mini .tl--dense {
+  --tl-label: 54px;
+}
+
+/* Five states on one row: the rail is 229px wide inside its padding, so the
+   swatches carry the meaning and the words run at the smallest size that still
+   holds a cap height. Everything the legend says is also in the live summary. */
+.focus__legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.focus__legend li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* The way out stands in the floor's own sky, at the top left of the frame, opposite the
+   viewfinder. It used to sit at the foot of this rail, which is taller than the frame on
+   a short screen: the one control a player needs in order to leave was the one below the
+   fold. Standing it in the frame costs no page height and puts it where the eye starts. */
+.focus__exit {
+  position: absolute;
+  top: 9px;
+  left: 12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 13px;
+  border: 1px solid rgb(110 227 207 / 0.42);
+  border-radius: var(--r-md);
+  background: rgb(1 12 20 / 0.72);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.focus__exit:hover {
+  border-color: var(--mint);
+  background: rgb(3 22 34 / 0.86);
+  color: var(--mint);
+}
+
+.focus__exit-arrow {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* With no canvas the frame is a text panel, so the exit joins the flow above the notice
+   instead of floating over the first line of it. It stays positioned rather than static,
+   so it keeps a stacking order of its own. */
+.focus-view--fallback .focus__exit {
+  position: relative;
+  top: auto;
+  left: auto;
+  margin-bottom: 10px;
+}
+
+/* --- stage: the 3D viewport ----------------------------------------------- */
+
+/* The frame is wider than it is tall by more than the floor is, so the sky above the bay
+   titles stays a band rather than a third of the picture: `fitCamera` holds the floor's
+   width and derives the vertical field, so a wider box trims sky instead of cropping the
+   outer bays. 1.72 left the floor a 485px band on a 1440x900 screen with the plan strips
+   pushed off the bottom of it; the strips gave back 80px, and the frame spends it on the
+   picture. The cap is what keeps a short window honest — the deck under the frame is the
+   only way to move the shift clock, so the frame never grows past the room for it. */
+.focus__viewport {
+  position: relative;
+  aspect-ratio: 1.58;
+  max-height: max(320px, 62vh);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(130% 90% at 50% -8%, #0a2740, transparent 68%),
+    linear-gradient(180deg, #04182a, #010b14);
+}
+
+/* Label anchors arrive as canvas percentages, so the tag layer only becomes a
+   size container once the renderer is live and those percentages mean something. */
+.focus-view--ready .focus__viewport {
+  container-type: size;
+}
+
+.focus-view--fallback .focus__viewport {
+  aspect-ratio: auto;
+  padding: 18px;
+}
+
+.focus-view--fallback .focus__canvas {
+  display: none;
+}
+
+.focus__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Every tag is sized from the canvas rather than the page, so the floor's labels keep
+   their proportion to the geometry they name at any stage width. The ceiling is the
+   size the target prints them at on a 940px canvas. */
+.focus__tags {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: clamp(8px, 1.72cqw, 15.5px);
+  line-height: 1.25;
+}
+
+/* A floor label. Every tag is centred on the point the scene projected for it, so
+   the only thing CSS decides is how the words look — never where they land. */
+.fx {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.fx b {
+  font-weight: 500;
+}
+
+.fx small {
+  font-size: 0.8em;
+  letter-spacing: 0.09em;
+}
+
+.fx--bay b {
+  font-size: 1.2em;
+  color: var(--ink);
+  text-shadow: 0 1px 7px rgb(1 8 15 / 0.95);
+}
+
+.fx--bay small {
+  color: #8fa8bd;
+  text-shadow: 0 1px 6px rgb(1 8 15 / 0.95);
+}
+
+/* The queue mark: a chip floating over the gate, the way the mock shows it, wide
+   enough that the depth reads as a plate on the deck rather than as two characters. */
+.fx--box {
+  padding: 0.3em 1.5em;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: rgb(2 12 21 / 0.86);
+  color: var(--ink-2);
+}
+
+/* The gate's callout stands clear above the slab and points back down at it, because
+   the point the scene projects for it is the block itself and the queue chip already
+   occupies the air directly over the gate. The lift and the tail are the only things
+   CSS decides here; which slab it belongs to is still the scene's answer. */
+.fx--bubble {
+  padding: 0.42em 0.9em;
+  border: 1px solid var(--mint);
+  border-radius: var(--r-sm);
+  background: #03141e;
+  font-size: 0.94em;
+  letter-spacing: 0.06em;
+  color: var(--mint);
+  transform: translate(-50%, calc(-100% - 2.4em));
+}
+
+.fx--bubble b {
+  font-weight: 500;
+}
+
+/* The tail leaves the bubble as a wedge and carries on as a hairline: the wedge is
+   what makes it a speech bubble, and the stem is what still reaches the block. */
+.fx--bubble::before,
+.fx--bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.fx--bubble::before {
+  width: 0;
+  height: 0;
+  border-right: 7px solid transparent;
+  border-left: 7px solid transparent;
+  border-top: 10px solid var(--mint);
+}
+
+.fx--bubble::after {
+  width: 1px;
+  height: 2.4em;
+  background: var(--mint);
+}
+
+/* Job labels sit on the lit cap of their own slab, so they take dark ink rather
+   than a glow: the cap is always the light face of the tint. They also stay a
+   notch smaller than the other tags, so the words keep to the cap they name. */
+.fx--job {
+  color: #05121d;
+  font-size: 0.92em;
+  line-height: 1.15;
+  animation: fx-arrive 300ms ease-out both;
+}
+
+/* A label lands on the stand the plan has sent its block to before the block finishes
+   travelling there, so a new arrival fades in over the move instead of appearing on an
+   empty stand. Its element is keyed by the site and the job together, which is what
+   makes this run when the job standing there changes and not when it merely re-renders. */
+@keyframes fx-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fx--job b {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  font-size: 1.02em;
+}
+
+/* The job's own warning rides its label at the label's size, in the label's dark ink:
+   the slab tint says which job it is, so the mark is the only thing on the cap that
+   says the plan is in trouble. */
+.fx--job .focus__warn {
+  width: 0.86em;
+  height: 0.86em;
+  stroke-width: 2.6;
+}
+
+.fx--job small {
+  opacity: 0.82;
+}
+
+.fx--job.is-missed small,
+.fx--job.is-at-risk small {
+  font-weight: 600;
+  opacity: 1;
+}
+
+/* Berth names ride the gantry header, over dark steel rather than over a chip of
+   their own: the mock prints them straight onto the beam, with the state word
+   carrying the only colour. */
+.fx--berth {
+  gap: 1px;
+  color: var(--ink-2);
+  text-shadow: 0 1px 6px rgb(1 8 15 / 0.95);
+}
+
+.fx--berth small {
+  font-size: 0.86em;
+  color: var(--mint);
+}
+
+.fx--berth.is-offline small {
+  color: var(--coral);
+}
+
+/* The padlock on a berth the disruption closed. It is a shape rather than a word
+   because the bay it sits on is already named beside it, and gold because that is the
+   tone the plan surface gives a berth that is standing idle. */
+.fx--lock {
+  color: var(--gold);
+}
+
+.fx__lock {
+  width: 1.5em;
+  height: 1.5em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Only the body is filled, and with the deck's own dark: the shackle is an open path,
+   so a fill on the whole mark would close the arc into a solid block. */
+.fx__lock rect {
+  fill: rgb(2 12 21 / 0.72);
+}
+
+/* The kerb numbers are the biggest words on the floor: each one has a whole slot cell
+   to itself, and they are what the plan strips underneath are counted against. */
+.fx--slot {
+  font-size: 2.15em;
+  letter-spacing: 0.04em;
+  color: #90a9be;
+}
+
+/* The deadline cell is coral, so its own number takes dark ink like a job label. */
+.fx--slot.is-deadline {
+  color: #2b0a06;
+  font-weight: 600;
+}
+
+/* The slot the floor is held at, marked on the kerb so the scrub reads on the floor and
+   not only in the bar under it. It is a rule under the number rather than a colour swapped
+   into it, because it has to stay legible on the coral deadline cell as well. */
+.fx--slot.is-now b {
+  padding: 0 0.1em;
+  border-bottom: 0.09em solid var(--mint);
+  text-shadow: 0 0 10px rgb(110 227 207 / 0.5);
+}
+
+/* The deadline mark hangs on the deck below its cell, outlined in the same coral
+   the cell and the timeline marker use. */
+.fx--deadline {
+  padding: 0.24em 0.42em;
+  border: 1px solid rgb(234 100 85 / 0.7);
+  border-radius: var(--r-sm);
+  background: rgb(2 12 21 / 0.82);
+  font-size: 1.05em;
+  color: var(--coral);
+}
+
+/* The mark points back at the cell it belongs to, so it reads as that slot's deadline
+   rather than as a note pinned to the deck under it. */
+.fx--deadline::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  margin-bottom: 4px;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid var(--coral);
+  border-left: 5px solid transparent;
+  transform: translateX(-50%);
+}
+
+/* The floor's pointer layer. It sits over the decorative tag layer and draws nothing
+   at rest, so the mock's picture is untouched until a pointer or the keyboard reaches
+   one of its objects. Targets are sized in container units, which keeps a berth the
+   same share of the canvas at every stage width. */
+.focus__pick {
+  position: absolute;
+  inset: 0;
+}
+
+.pk {
+  position: absolute;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pk--job { width: 11cqw; height: 15cqh; }
+.pk--berth { width: 9cqw; height: 11cqh; }
+.pk--bay { width: 13cqw; height: 8cqh; }
+.pk--deadline { width: 12cqw; height: 7cqh; }
+.pk--slot { width: 5.4cqw; height: 9cqh; }
+
+.pk:focus-visible {
+  outline: 2px solid rgb(110 227 207 / 0.9);
+  outline-offset: 1px;
+}
+
+/* What acknowledges the cursor: the object it is over gets outlined in place. */
+.pk__ring {
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.pk:hover .pk__ring,
+.pk:focus-visible .pk__ring {
+  border-color: rgb(110 227 207 / 0.7);
+  background-color: rgb(110 227 207 / 0.07);
+}
+
+/* An object the plan is failing keeps its own colour when the cursor names it: the
+   highlight reports state, it does not overwrite it. */
+.pk.is-at-risk:hover .pk__ring,
+.pk.is-at-risk:focus-visible .pk__ring {
+  border-color: rgb(224 167 47 / 0.8);
+  background-color: rgb(224 167 47 / 0.09);
+}
+
+.pk.is-missed:hover .pk__ring,
+.pk.is-missed:focus-visible .pk__ring,
+.pk.is-offline:hover .pk__ring,
+.pk.is-offline:focus-visible .pk__ring,
+.pk.is-deadline:hover .pk__ring,
+.pk.is-deadline:focus-visible .pk__ring {
+  border-color: rgb(234 100 85 / 0.8);
+  background-color: rgb(234 100 85 / 0.09);
+}
+
+/* The panel a target opens is the shared `.tip` in base.css, delivered to the body: the
+   viewport clips its own overflow to hold the extruded faces inside the frame, so a panel
+   parented here would be cut off on the floor's low and edge objects. */
+.focus__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 20px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.focus__overlay b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--coral);
+}
+
+.focus__overlay small {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: var(--ink-3);
+}
+
+.focus-view--fallback .focus__overlay {
+  position: static;
+  padding: 6px 0 14px;
+}
+
+/* The two route callouts name the dashed lines drawn in the scene: coral for the
+   plan as it stands, mint for the staged alternative that has not been applied.
+   They stand together on the deck above the slot kerb, the way the mock has them,
+   so the kerb's own cells stay readable underneath instead of being covered by a
+   box pinned to the bottom of the frame. Both boxes start at the same line, which
+   leaves the ghost's disclaimer hanging under the box it belongs to.
+
+   At 19% the callouts still crossed the top of the kerb and covered two of its cells,
+   measured at 1440x900. 24% is where the box clears the tallest cell at every aspect
+   this frame takes, and the unit is a share of the frame because the kerb scales with it. */
+.focus__routes {
+  position: absolute;
+  bottom: 24%;
+  left: 47%;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 9px;
+  max-width: 78%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.focus-view--fallback .focus__routes {
+  position: static;
+  bottom: auto;
+  left: auto;
+  max-width: none;
+  transform: none;
+}
+
+/* Both callouts are given the same width in pixels rather than in characters: the
+   wrapper around the ghost carries the page's own font, so a ch basis would size the
+   two boxes differently and the routes would stop being read against each other. */
+.focus__route--cause,
+.focus__ghost {
+  flex: 0 1 124px;
+}
+
+.focus__ghost {
+  display: grid;
+  gap: 5px;
+}
+
+/* The proposal says twice that it is only a proposal: once on the box, and once
+   under it in the words the plan strip uses for the same plan. */
+.focus__ghost em {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+
+.focus__route {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-sm);
+  background: rgb(2 11 19 / 0.84);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.focus__route--cause {
+  border-color: rgb(234 100 85 / 0.75);
+}
+
+.focus__route--cause b {
+  font-weight: 500;
+  color: var(--coral);
+}
+
+.focus__route--cause span {
+  color: rgb(234 100 85 / 0.86);
+}
+
+.focus__route--ghost {
+  border-color: rgb(110 227 207 / 0.6);
+}
+
+.focus__route--ghost b {
+  font-weight: 500;
+  color: var(--mint);
+}
+
+.focus__route--ghost span {
+  color: rgb(110 227 207 / 0.82);
+}
+
+/* The causal sentence sits in the rail the target leaves open under the slot legend, so
+   it explains the focus without crossing the kerb the routes stand on. */
+.focus__cause {
+  display: grid;
+  gap: 6px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+
+.focus__cause-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.focus__cause p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.focus__cause small {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.focus__cause b {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.focus__cause b.is-offline {
+  border-color: rgb(234 100 85 / 0.5);
+  color: var(--coral);
+}
+
+.focus__cause b.is-active {
+  border-color: rgb(110 227 207 / 0.45);
+  color: var(--mint);
+}
+
+/* The viewfinder reads as a frame around the words rather than as a chip: the target
+   brackets the label so it belongs to the scene, not to a panel floating over it. */
+.focus__camera {
+  position: absolute;
+  top: 9px;
+  right: 16px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 13px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mint);
+  text-shadow: 0 1px 7px rgb(1 8 15 / 0.95);
+}
+
+.focus__camera::before,
+.focus__camera::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  border: 1px solid rgb(110 227 207 / 0.7);
+}
+
+.focus__camera::before {
+  left: 0;
+  border-right: 0;
+}
+
+.focus__camera::after {
+  right: 0;
+  border-left: 0;
+}
+
+/* The viewfinder's mark is drawn rather than typed: the mock's glyph has no coverage
+   in the mono stack, and a missing glyph shows as a tofu box. */
+.focus__lens {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+/* --- stage: the floor's own controls -------------------------------------- */
+
+/* One bar under the frame carrying both controls the floor has: where the camera stands,
+   and where in the shift the floor is held. Neither is a fact about the plan, which is
+   why they sit here rather than in the rail with the numbers that are. Under the frame
+   and not over it, because an overlay would have to stand on the slot kerb or the route
+   callouts, and the scrub has to stay reachable when there is no canvas at all. */
+.focus__deck {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+
+.focus__deck-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The shift group takes whatever the camera group leaves: the scrub is the one control
+   here that gets better the wider it is allowed to be. Both groups wrap, because a row
+   that cannot wrap sets a floor under the whole page: on a 390px screen the deck's
+   nowrap width was 407px, and the frame and the floor list stretched to it. */
+.focus__deck-group--shift {
+  flex: 1 1 250px;
+  gap: 9px;
+}
+
+.focus__deck button {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.focus__deck button:not(:disabled):hover {
+  color: var(--ink);
+}
+
+/* A camera view reads as a chip, and the one being looked through is filled in: four
+   flat words would leave the bar silent about which of them is answering. */
+.focus__view {
+  padding: 6px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+}
+
+.focus__view.is-on,
+.focus__view.is-on:hover {
+  border-color: rgb(110 227 207 / 0.5);
+  background: rgb(110 227 207 / 0.12);
+  color: var(--mint);
+}
+
+/* Zoom is one control with two ends and a readout between them, so it is boxed as one
+   thing: a bare −, a number and a + would read as three more view chips. */
+.focus__zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  padding: 2px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+}
+
+.focus__zoom button {
+  width: 25px;
+  height: 24px;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.focus__zoom b {
+  min-width: 3.7em;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: var(--ink-2);
+}
+
+.focus__play,
+.focus__deck-reset {
+  padding: 6px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+}
+
+.focus__play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.focus__play[aria-pressed="true"] {
+  border-color: rgb(110 227 207 / 0.5);
+  color: var(--mint);
+}
+
+/* The scrub is the shift itself. The native control is kept: it is already a slider a
+   keyboard steps one slot at a time, and this page has no business reimplementing that
+   with divs. `color-scheme: dark` and the mint accent are what make it belong here. */
+.focus__scrub {
+  flex: 1 1 auto;
+  min-width: 84px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--mint);
+  cursor: pointer;
+}
+
+.focus__slot-read {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.focus__floor {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  list-style: none;
+}
+
+.focus__floor li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.focus__floor li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.focus__floor b {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.focus__floor span {
+  color: var(--ink);
+  text-align: right;
+}
+
+/* --- right rail: the auditor --------------------------------------------- */
+
+/* The auditor's own headings run larger than the page's kicker primitive, because in
+   this column they are the only structure the reader has: three of them stack the
+   panel into the finding, the proposal and the boundary. */
+.focus__title {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.focus__title--mint {
+  color: var(--mint);
+}
+
+.focus__steps {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A step is a numbered row: the numeral in a cell of its own, what the step is called
+   above the sentence that says what it does, and its state as a mark on the right. */
+.focus__steps li {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 68px;
+  padding-right: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+}
+
+.focus__steps b {
+  display: grid;
+  align-self: stretch;
+  place-items: center;
+  border-right: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 42px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--mint);
+}
+
+/* The step still ahead is the one drawn as a box: the two behind it carry ticks, so
+   the outline is what says which step the run is waiting on. */
+.focus__steps li:not(.is-done) b {
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+  box-shadow: inset 0 0 0 1px rgb(110 227 207 / 0.55);
+}
+
+.focus__step-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.focus__step-text strong {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+
+.focus__step-text small {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--ink-2);
+}
+
+.focus__mark {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--ink-3);
+}
+
+.focus__mark path {
+  stroke-width: 2.1;
+}
+
+.focus__steps li.is-done .focus__mark {
+  color: var(--mint);
+}
+
+/* The finding is a sentence about the plan, so it is set as one: no box, and the tone
+   of the audit carried by the heading instead of by tinting the words themselves. */
+.focus__why {
+  display: grid;
+  gap: 13px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.focus__why p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--ink-2);
+}
+
+.focus__why.is-clear .focus__title {
+  color: var(--mint);
+}
+
+.focus__why.is-watch .focus__title {
+  color: var(--gold);
+}
+
+.focus__why.is-critical .focus__title {
+  color: var(--coral);
+}
+
+/* The proposal is the one thing in this column that is not yet true, so it is the one
+   thing kept inside a frame, with the outcome it would buy printed in mint. */
+.focus__proposal {
+  display: grid;
+  gap: 10px;
+  padding: 12px 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.focus__proposal p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.focus__proposal b {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+
+/* The boundary is stated rather than decorated: a heading, the sentence that names who
+   decides, and the button that hands the decision back to them. A tinted box here
+   would read as a warning about the plan, when the point is who commits it. */
+.focus__commit-band {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.focus__commit-band p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.focus__commit-band small {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.6;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+/* The commit button spans the panel and centres its own label: the block modifier in
+   the frame sheet pushes mark and words to opposite edges, and this is one gesture. */
+.focus__commit {
+  width: 100%;
+  min-height: 56px;
+  gap: 16px;
+  border-radius: 5px;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+}
+
+/* --- stage: the two plan strips ------------------------------------------- */
+
+/* One panel split by a hairline rather than two bordered cards: the live plan and
+   the staged ghost are read against each other slot by slot, so the same slot has
+   to sit at the same x in both and a second frame between them only breaks that
+   reading. */
+/* Both plans are read against one slot ruler, in two rows of one strip: the same column
+   means the same time in both, which is what a comparison has to guarantee. Two strips,
+   each with a ruler and a deadline caption of its own, could not. */
+.focus__plans {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+
+/* The two keys sit on one line above the shared ruler. Where the ghost has nothing to
+   show, its key is replaced by the sentence saying so, in the same row. */
+.focus__plans-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* The strip carries its rows' labels now, so it keeps a label column; the keys above it
+   say which plan is in force, so the label itself only has to name the row. Its own frame
+   comes off, because it is drawn for a strip sitting under other content inside the board
+   and here the panel's padding and the keys already do that work. */
+.focus__plans .tl--dispatch {
+  --tl-label: 52px;
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+}
+
+/* Each strip names itself in mint and states its standing in grey, with a filled
+   swatch for the plan in force and a hollow one for the proposal that is not. */
+.focus__strip-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+
+.focus__strip-head > i {
+  width: 9px;
+  height: 9px;
+  border-radius: 1px;
+  background: var(--mint);
+  flex: none;
+}
+
+.focus__strip-head > b {
+  font-weight: 500;
+}
+
+.focus__strip-head > small {
+  font-size: 1em;
+  color: var(--ink-3);
+}
+
+.focus__strip-head--ghost > i {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--mint);
+}
+
+/* Nothing is staged yet, so the key row says so where the ghost's own key would stand.
+   It is a sentence in the row, not a boxed placeholder the size of the strip: an empty
+   frame that large used to claim more of the panel than the absence deserves. */
+.focus__empty {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+/* The live region repeats the floor in one sentence for assistive tech; the mock
+   has no room for it on screen, and the visible floor already says the same. */
+.focus__semantic {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- narrow ---------------------------------------------------------------- */
+
+@media (max-width: 1180px) {
+  .focus {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-areas:
+      "stage rail"
+      "stage auditor";
+  }
+}
+
+@media (max-width: 900px) {
+  .focus {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "stage"
+      "rail"
+      "auditor";
+  }
+
+  /* Below this width the projected tags crowd each other, so the floor is read
+     from the text list instead and the canvas stays a picture of it. */
+  .focus__tags {
+    display: none;
+  }
+
+  .focus__floor {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+
+  /* Relative rather than static: the callouts belong in the flow at this width, but a static
+     box cannot take a stacking order, and without one the absolutely positioned canvas paints
+     straight over them. Relative keeps the flow position and lets the z-index above hold. */
+  .focus__routes {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    max-width: none;
+    flex-wrap: wrap;
+    transform: none;
+  }
+
+  .focus__route--cause,
+  .focus__ghost {
+    flex-basis: auto;
+  }
+
+  /* With the tag layer gone, the frame's own children are the exit and the two route
+     callouts, and both are in the flow. They stack in the sky in the order they are read
+     rather than one being pinned over the other, and the padding keeps them off the edge
+     of the frame — the canvas is absolute, so it is not moved by it. The exit stays
+     positioned so that it keeps its z-index: static, the pick layer painted over it. */
+  .focus__viewport {
+    padding: 10px;
+  }
+
+  .focus__exit {
+    position: relative;
+    top: auto;
+    left: auto;
+    margin-bottom: 8px;
+  }
+
+  /* The viewfinder cannot share the top line here: the way out and this label together want
+     355px of a 338px frame, so at 390 the label's left bracket lands on the exit's last word.
+     It drops to the foot of the frame instead of being tucked under the exit, because the
+     exit's height is not this rule's to know — from the bottom edge the two can never meet
+     however long either label runs. A readout at the foot of the frame is still the frame's. */
+  .focus__camera {
+    top: auto;
+    right: 10px;
+    bottom: 8px;
+  }
+}

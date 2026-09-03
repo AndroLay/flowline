@@ -1,36 +1,40 @@
 /* Flowline — plan surface: the queue, the 2.5D bays, the timeline, the legend.
    This sheet owns everything inside .board and .tl and nothing outside them. */
 
-.chip--coral,
-.slab--coral,
-.tl__bar--coral,
-.sw--coral {
-  --tint: var(--coral);
-  --tint-ink: #2b0a06;
+/* The job's own colour, and only that. A verdict is drawn on top of it — gold hatch for
+   at risk, coral fill for late — so identity and outcome can never be the same signal.
+   Every one of the four is light enough to carry the same dark ink, which is what keeps a
+   hatched bar readable whichever job is under it. */
+.chip--ice,
+.slab--ice,
+.tl__bar--ice,
+.sw--ice {
+  --tint: var(--ice);
+  --tint-ink: #0b1030;
 }
 
-.chip--gold,
-.slab--gold,
-.tl__bar--gold,
-.sw--gold {
-  --tint: var(--gold);
-  --tint-ink: #291c02;
+.chip--azure,
+.slab--azure,
+.tl__bar--azure,
+.sw--azure {
+  --tint: var(--azure);
+  --tint-ink: #031c2b;
 }
 
-.chip--mint,
-.slab--mint,
-.tl__bar--mint,
-.sw--mint {
-  --tint: var(--mint);
-  --tint-ink: #04231d;
+.chip--violet,
+.slab--violet,
+.tl__bar--violet,
+.sw--violet {
+  --tint: var(--violet);
+  --tint-ink: #1b0733;
 }
 
-.chip--blue,
-.slab--blue,
-.tl__bar--blue,
-.sw--blue {
-  --tint: var(--blue);
-  --tint-ink: #04121f;
+.chip--cobalt,
+.slab--cobalt,
+.tl__bar--cobalt,
+.sw--cobalt {
+  --tint: var(--cobalt);
+  --tint-ink: #050f2e;
 }
 
 .board {
@@ -127,6 +131,30 @@
   box-shadow: 0 0 0 2px rgb(255 255 255 / 0.22);
 }
 
+/* A chip that can be dragged says so with the cursor, and while it is in the air it thins
+   out so the row reads as a gap waiting to be filled rather than a list that lost a job. */
+.chip[draggable="true"] {
+  cursor: grab;
+}
+
+.queue__slot.is-held .chip {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+/* The slot the chip would land in, marked on the number rather than between the chips: a
+   drop here means "this job takes slot 3", which is the same move the arrows make. Mint,
+   because white already means selected. */
+.queue__slot.is-over .queue__n {
+  border-color: var(--mint);
+  background: rgb(110 227 207 / 0.14);
+  color: var(--mint);
+}
+
+.queue__slot.is-over .chip {
+  box-shadow: 0 0 0 2px var(--mint);
+}
+
 .queue__move {
   display: inline-flex;
   flex-direction: column;
@@ -184,17 +212,39 @@
   pointer-events: none;
 }
 
+/* The gate column: the circled arrow, and under it the job that has finished prep
+   and is still waiting for a berth. It stands between the two bays because that is
+   where the plan actually holds it — not inside a bay it has not reached. */
 .bays__handoff {
+  display: grid;
+  justify-items: center;
+  align-content: end;
+  gap: 12px;
+  margin-bottom: 34px;
+}
+
+/* With nobody at the gate the arrow floats at the height of the stands; once a job
+   is actually waiting there, the column drops onto the same ground line the bays
+   stand on, so the gate is a place on the floor rather than a card hovering over it. */
+.bays__handoff:has(.slab) {
+  margin-bottom: 0;
+}
+
+.bays__arrow {
   display: grid;
   place-items: center;
   width: 38px;
   height: 38px;
-  margin-bottom: 34px;
   border: 1px solid var(--line-2);
   border-radius: 50%;
   background: rgb(1 12 20 / 0.8);
   font-size: 14px;
   color: var(--mint);
+}
+
+.bays__handoff .slab {
+  width: 128px;
+  flex: none;
 }
 
 .bay {
@@ -303,6 +353,23 @@
   transform: translateY(-3px);
 }
 
+/* A stand the shift has lost. The plate is still drawn so the missing berth reads
+   as an absence rather than as a bay that shrank, and nothing stands on it. */
+.slab--idle {
+  --tint: #0c1e2d;
+  --tint-ink: var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  background-image: repeating-linear-gradient(-45deg, rgb(234 100 85 / 0.13) 0 6px, transparent 6px 13px);
+}
+
+.slab--idle:hover {
+  transform: none;
+}
+
+.slab--idle .slab__name {
+  font-weight: 500;
+}
+
 .slab.is-on {
   box-shadow: 0 0 0 2px rgb(255 255 255 / 0.3);
 }
@@ -344,11 +411,28 @@
   background: color-mix(in srgb, #ffffff 62%, var(--tint));
 }
 
+/* A stand is at risk exactly when its meter fills: the run ends in the last slot the
+   deadline allows. The fill states that in the gold the legend gives the word, hatched
+   so it reads on a gold job as well as on a dark one, and the warning mark above says
+   which of the two marked states this is. The band keeps the height it has on every
+   other stand — only a miss earns the thicker one. */
+.slab.is-risk .slab__meter i {
+  background:
+    repeating-linear-gradient(135deg, rgb(0 0 0 / 0.32) 0 4px, transparent 4px 8px),
+    var(--gold);
+}
+
+/* A miss is the one verdict that overrides the job's own colour, here exactly as it does
+   on the timeline bar and in the legend swatch: the coral fill with its dark hatch, so the
+   word has one look wherever it is drawn. The band is thicker than every other stand's,
+   but it may not grow the slab — the extra height comes out of the gap above it so every
+   stand on the floor keeps one height and the two bay headings stay on one line. */
 .slab.is-late .slab__meter {
   height: 17px;
+  margin-top: 1px;
   background:
     repeating-linear-gradient(135deg, rgb(0 0 0 / 0.34) 0 5px, transparent 5px 10px),
-    color-mix(in srgb, var(--tint-ink) 22%, var(--tint));
+    var(--coral);
 }
 
 .slab.is-late .slab__meter i {
@@ -361,6 +445,13 @@
   bottom: 8px;
   font-size: 12px;
   color: color-mix(in srgb, var(--tint-ink) 80%, transparent);
+}
+
+/* Centred on the hatched band it belongs to, rather than on the slab's own edge, and in the
+   coral bar's own ink rather than the job's, because that is the surface it now sits on. */
+.slab.is-late .slab__warn {
+  bottom: 11px;
+  color: #2b0a06;
 }
 
 /* --- timeline ------------------------------------------------------------- */
@@ -419,6 +510,23 @@
   text-overflow: ellipsis;
 }
 
+/* On a per-job strip the row label is how that job is selected, so it carries the
+   affordance and the selected state the slabs and the queue chips carry. */
+.tl__lane-label--pick {
+  padding: 0 12px 0 0;
+  text-align: left;
+  transition: color 0.16s ease;
+}
+
+.tl__lane-label--pick:hover,
+.tl__lane-label--pick.is-on {
+  color: var(--ink);
+}
+
+.tl__lane.is-on {
+  box-shadow: inset 0 0 0 1px rgb(110 227 207 / 0.35);
+}
+
 .tl--dense .tl__lane-label {
   font-size: 9px;
   padding-right: 8px;
@@ -469,6 +577,18 @@
   font-size: 9px;
 }
 
+/* At risk keeps the job's own tint, because the plan does still deliver it: what is
+   missing is the spare slot, and that is stated in the gold the legend gives the word
+   — a hatch across the bar and a line under it — rather than in the coral a miss
+   earns. Held to the same weight as the late hatch so neither state reads as louder
+   than its verdict. */
+.tl__bar.is-risk {
+  background:
+    repeating-linear-gradient(135deg, rgb(224 167 47 / 0.5) 0 5px, transparent 5px 10px),
+    var(--tint);
+  box-shadow: inset 0 -2px 0 var(--gold);
+}
+
 .tl__bar.is-late {
   background:
     repeating-linear-gradient(135deg, rgb(0 0 0 / 0.3) 0 5px, transparent 5px 10px),
@@ -479,6 +599,22 @@
 .tl--ghost .tl__bar {
   background: color-mix(in srgb, var(--tint) 62%, #0a1824);
   color: var(--ink);
+}
+
+/* A ghost row inside a strip that also carries the live plan. Same damping as a whole
+   ghost strip, per bar, so the row that is not in force reads as the quieter of the two
+   without needing a strip of its own to say so. */
+.tl__bar.is-ghost {
+  background: color-mix(in srgb, var(--tint) 62%, #0a1824);
+  color: var(--ink);
+  outline: 1px dashed rgb(255 255 255 / 0.22);
+  outline-offset: -2px;
+}
+
+.tl__bar.is-ghost.is-late {
+  background:
+    repeating-linear-gradient(135deg, rgb(0 0 0 / 0.3) 0 5px, transparent 5px 10px),
+    color-mix(in srgb, var(--coral) 68%, #0a1824);
 }
 
 .tl__rule {
@@ -562,16 +698,37 @@
   background: var(--tint, var(--ink-3));
 }
 
+/* The three verdict swatches are the bar recipes at swatch size, not three hues the board
+   does not otherwise use. An on-time bar is the job's own colour with nothing drawn on it,
+   so its swatch is a plain plate; at risk is the gold hatch and the gold rule laid over
+   that colour; late is the coral fill with its dark hatch. Read as patterns they also
+   survive a reader who cannot separate the hues. */
 .sw--ontime {
-  --tint: var(--mint);
+  --tint: var(--ink-2);
 }
 
 .sw--risk {
-  --tint: var(--gold);
+  --tint: var(--ink-2);
+  background-image: repeating-linear-gradient(135deg, rgb(224 167 47 / 0.9) 0 2px, transparent 2px 4px);
+  box-shadow: inset 0 -2px 0 var(--gold);
 }
 
 .sw--late {
   --tint: var(--coral);
+  background-image: repeating-linear-gradient(135deg, rgb(0 0 0 / 0.34) 0 2px, transparent 2px 4px);
+}
+
+/* Idle and offline are floor conditions rather than job outcomes, so they read as
+   a hollow plate and a hatched barrier instead of a solid tint. */
+.sw--idle {
+  --tint: transparent;
+  border: 1px solid var(--line-2);
+}
+
+.sw--offline {
+  --tint: transparent;
+  border: 1px solid var(--coral);
+  background-image: repeating-linear-gradient(-45deg, rgb(234 100 85 / 0.85) 0 2px, transparent 2px 4px);
 }
 
 @media (max-width: 720px) {
@@ -581,8 +738,14 @@
   }
 
   .bays__handoff {
-    transform: rotate(90deg);
     justify-self: center;
+    margin-bottom: 0;
+  }
+
+  /* Stacked, the handoff points down the column instead of across it — and only the
+     arrow turns, so the gate slab's label stays upright. */
+  .bays__arrow {
+    transform: rotate(90deg);
   }
 
   .tl {

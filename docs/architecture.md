@@ -4,9 +4,9 @@
 
 Flowline is a static, local-first React application. It has no backend, database, login, external API, analytics, or real-world side effect. The browser owns the authoritative game state for the current session.
 
-The package intentionally lives at `submissions/flowline` so it can be built, tested,
-hosted, and submitted independently from `submissions/withheld`. No other submission
-package is maintained in this workspace.
+The package is self-contained on purpose: it builds, tests, and deploys on its own, with no
+dependency on a sibling project, a shared library, or any build step outside its own
+`package.json`.
 
 ## Layers
 
@@ -76,19 +76,47 @@ exposed as ghost jobs without changing the committed schedule.
 
 ### `src/visual/flowline-3d.ts`
 
-This module is the only Three.js boundary. It owns one renderer, one scene, one
-camera, reusable low-poly objects, guided camera motion, capped pixel ratio, and
-full cleanup. Its render loop is demand-driven: it renders on a state/resize/focus
-transition and stops while idle, hidden, offscreen, or disposed. No React state is
-updated per frame. Three.js is dynamically imported, so the initial route does not
-request its chunk.
+This module is the only Three.js boundary. It owns one renderer, one scene, one camera
+with four fixed vantage points and five zoom steps, reusable low-poly objects, capped
+pixel ratio, and full cleanup. The camera never pans or yaws freely: every word on the
+floor is DOM text positioned from projected world anchors, and that projection only
+stays legible while the eye and target share an x, so each preset re-aims along that
+axis and re-projects every anchor rather than sweeping between them.
+Focus is therefore expressed by highlighting, locking, routing and naming the causal
+slice rather than by flying to it. Its render loop is demand-driven: it renders on a
+state/resize/focus transition and stops while idle, hidden, offscreen, or disposed. No
+React state is updated per frame. Three.js is dynamically imported, so the initial
+route does not request its chunk.
 
-### `src/arena-dark-theme.css` and other styles
+### `src/base.css`, `src/pages.css`, `src/plan.css`, and other styles
 
 The presentation uses a dark operations-deck system with CSS-native 2.5D visual
 layers, a deep operations dock, lane cards, animated job bars, disruption striping,
 and responsive stacking. The optional focus layer is visually consistent with this
 system but does not replace the semantic DOM surface.
+
+### `tests/evals/`
+
+A local eval harness that scores the tool surface rather than a model. A solver is handed
+exactly what a WebMCP client is handed — the six names, sentences and schemas from
+`TOOL_SPECS`, and one `call` function — and nothing else: not the scenario, not the
+evaluator, not the fixture. Tasks are sentences a person would type, and they are scored on
+the board that results and on the trace the runtime wrote, never on the solver's wording, so
+two agents that take different routes to the same board both pass.
+
+Nothing calls a model, which is the point: the numbers reproduce on a laptop with no key and
+no network, and what they measure is whether the surface is workable blind. The invariants
+are where the teeth are — one trace line per call, no call moves the committed revision, a
+refusal changes nothing, no plan is staged that this run has not compared, and a per-task
+call budget so a brute-force sweep over 24 orders cannot pass by exhaustion. The suite also
+keeps a solver that is *supposed* to fail: `hopeful` compares candidates properly but reads
+the normal shift, where this board offers no signal, so it keeps a brittle order. If the
+robustness task ever accepts it, that task has stopped measuring anything.
+
+This is also how the surface's one real hole was found: `undo_schedule` required a receipt id
+that no tool reported, so it was listed, typed, annotated, callable, and impossible to call
+correctly. `inspect_board` now reports the active receipt, and a guard asserts that every
+value a write tool requires appeared in an earlier read — checked on values, not key names.
 
 ## State machine
 

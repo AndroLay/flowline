@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { evaluateSchedule, formatSchedule, type AgentFocus, type GameState, type JobId, type ScheduleAudit, type ScheduleEvaluation, type ToolEvent } from "../domain/model.ts";
+import { endSlot, formatSchedule, startSlot, type AgentFocus, type GameState, type JobId, type PlanRecommendation, type ScheduleAudit, type ScheduleEvaluation, type ToolEvent } from "../domain/model.ts";
 import type { RegistrationSnapshot } from "../tools/webmcp.ts";
 import { PlanBoard, ScheduleTimeline, type ShiftMode } from "./PlanBoard.tsx";
 
@@ -18,13 +18,15 @@ export type ArenaProps = {
   evaluation: ScheduleEvaluation;
   audit: ScheduleAudit;
   ghost?: ScheduleEvaluation;
+  /** The auditor's own candidate, searched from the board. Absent once the board is the best plan. */
+  recommendation?: PlanRecommendation;
   registration: RegistrationSnapshot;
   events: ToolEvent[];
   mode: ShiftMode;
   onMode: (mode: ShiftMode) => void;
   selectedJobId: JobId;
   onSelectJob: (jobId: JobId) => void;
-  onMove: (index: number, direction: -1 | 1) => void;
+  onReorder: (from: number, to: number) => void;
   onInspect: () => void;
   onSimulate: () => void;
   onFindBottleneck: () => void;
@@ -44,6 +46,40 @@ export type ArenaProps = {
 function pad(value: number) {
   return String(value).padStart(2, "0");
 }
+
+type TraceChip = { text: string; wrap?: boolean };
+
+/**
+ * The trace panel is the page's evidence that the boundary held, so it reads the
+ * event's own recorded fields and re-derives nothing: whether the call was refused and
+ * why, whether the committed revision moved, where it moved the focus, and a reduced
+ * form of the arguments. A refused call is shown, not hidden — the log would otherwise
+ * describe a clean run of tools that never landed.
+ */
+function traceMeta(event: ToolEvent): TraceChip[] {
+  const chips: TraceChip[] = [{ text: event.ok ? "ok" : `refused: ${event.code ?? "error"}` }];
+  chips.push({
+    text: event.revisionAfter === event.revisionBefore
+      ? `rev ${pad(event.revisionBefore)} held`
+      : `rev ${pad(event.revisionBefore)} → ${pad(event.revisionAfter)}`,
+  });
+  // The berth is in the chip when the call named one: "focus dispatch" is true of the
+  // bottleneck reading and of the shock alike, and the berth number is the part that
+  // tells the trace which of the two moved the floor.
+  if (event.focus) {
+    const berth = event.focus.berthIndex === undefined ? "" : ` / berth ${event.focus.berthIndex + 1}`;
+    chips.push({ text: `focus ${event.focus.stationId}${event.focus.jobId ? ` / ${event.focus.jobId}` : ""}${berth}` });
+  }
+  // The reduced arguments are the one chip that can run long, so it is given its own
+  // line and allowed to wrap: an off-schema key hidden behind an ellipsis is not
+  // evidence of anything.
+  if (event.input) chips.push({ text: event.input, wrap: true });
+  // Only the proposal, which the call produced. A receipt ID arrived as an argument and
+  // is already in the reduced input, so printing it twice would just pad the row.
+  if (event.proposalId) chips.push({ text: event.proposalId });
+  return chips;
+}
+
 export function ArenaPage(props: ArenaProps) {
   const { state, evaluation, ghost } = props;
   return (
@@ -59,7 +95,7 @@ export function ArenaPage(props: ArenaProps) {
           onMode={props.onMode}
           selectedJobId={props.selectedJobId}
           onSelectJob={props.onSelectJob}
-          onMove={props.onMove}
+          onReorder={props.onReorder}
         />
         <button className="focus-open" type="button" onClick={props.onOpenFocus}>
           Open 3D station view<span aria-hidden="true">↗</span>
@@ -93,14 +129,17 @@ function ObjectiveRail({ state, evaluation }: ArenaProps) {
 
       <section className="panel">
         <span className="micro micro--mint">Objective</span>
-        <h2 className="panel__display">Make the<br /><em>shift hold.</em></h2>
+        <h2 className="panel__display"><span>Make the</span><em>shift hold.</em></h2>
         <p>Build the order, let the auditor expose the weak point, and decide what is worth protecting.</p>
+        {/* Named for what it does. It moves the keyboard into the first job of the queue,
+            which is where a shift is actually built, and it is not a second door into a
+            page the player is already standing on. */}
         <button
           className="btn btn--ghost btn--block"
           type="button"
           onClick={() => document.querySelector<HTMLElement>(".queue__list button")?.focus()}
         >
-          Enter the operations floor<span aria-hidden="true">→</span>
+          Start with the queue order<span aria-hidden="true">→</span>
         </button>
       </section>
 
@@ -108,13 +147,15 @@ function ObjectiveRail({ state, evaluation }: ArenaProps) {
         <span className="micro micro--mint">Critical job</span>
         <div className="critical__head">
           <h2 className="panel__display panel__display--coral">{critical.shortLabel}</h2>
-          <span className="tag">Out: {critical.dispatchDuration}</span>
+          {/* "Out: 3" read as a berth number beside a berth-numbered board. It is a
+              duration, so it says so. */}
+          <span className="tag">Dispatch {critical.dispatchDuration} slots</span>
         </div>
-        <p>Last dispatch of the shift.<br />Missing the deadline voids the shift.</p>
+        <p>Last dispatch of the shift. Missing the deadline voids the shift.</p>
         <div className={`deadline-box${late ? " is-late" : ""}`}>
           <span className="micro">Deadline</span>
           <strong>{critical.code} • D{critical.deadline}</strong>
-          <b>{run ? `Slot ${pad(run.dispatchEnd)}` : "—"}</b>
+          <b>{run ? `Slot ${pad(endSlot(run))}` : "—"}</b>
         </div>
       </section>
 
@@ -134,21 +175,26 @@ function ObjectiveRail({ state, evaluation }: ArenaProps) {
   );
 }
 function AgentRail(props: ArenaProps) {
-  const { state, audit, registration, events } = props;
+  const { state, audit, recommendation, registration, events } = props;
   const blocked = state.phase === "awaiting_review" || state.phase === "applied";
   const critical = state.scenario.jobs.find((job) => job.priority === "critical") ?? state.scenario.jobs[0];
   const stressRun = audit.stress.jobs.find((run) => run.jobId === critical.id);
-  const robust = evaluateSchedule(state.scenario, state.scenario.robustSchedule, { dispatchParallelism: state.scenario.disruption.dispatchParallelism });
-  const robustRun = robust.jobs.find((run) => run.jobId === critical.id);
+  const proposedRun = recommendation?.audit.stress.jobs.find((run) => run.jobId === critical.id);
   const canStage = (state.phase === "planning" || state.phase === "disrupted") && state.playerReason.trim().length >= 3 && !state.pendingProposal;
   const canUndo = Boolean(state.activeReceipt?.action === "applied" && (state.phase === "applied" || state.phase === "disrupted") && !state.pendingProposal);
   const steps = [
     { n: 1, title: "Inspect", copy: "Read the board.", done: state.agentFocus !== "idle", run: props.onInspect, off: false },
     { n: 2, title: "Stress-test", copy: "Find where it breaks.", done: ["bottleneck", "simulation", "proposal", "incident", "recovery"].includes(state.agentFocus), run: props.onSimulate, off: blocked },
-    { n: 3, title: "Propose", copy: "Suggest a fix.", done: Boolean(state.pendingProposal) || state.agentFocus === "proposal", run: props.onStageProposal, off: !canStage },
+    { n: 3, title: "Propose", copy: "Suggest a fix.", done: Boolean(state.pendingProposal) || state.agentFocus === "proposal", run: props.onStageProposal, off: !canStage || !recommendation },
   ];
   return (
     <aside className="rail rail--agent">
+      {/* The gate leads this column. Measured at 1440x900 it used to sit last, which put
+          its confirming button at y=954 in a 900px viewport — the one control the whole
+          design is about, and it was the one thing you had to scroll to find. The auditor's
+          case for the change reads underneath it: the claim first, the evidence after. */}
+      <DecisionGate {...props} />
+
       <section className="panel" aria-labelledby="auditor-title">
         <header className="panel__kicker">
           <span className="dot-label" id="auditor-title"><i />Operations auditor</span>
@@ -165,22 +211,40 @@ function AgentRail(props: ArenaProps) {
             </li>
           ))}
         </ol>
+        {/* The heading follows the audit, not the demo: a board that holds is not
+            introduced as one that breaks, or the panel would be arguing with its own
+            sentence. */}
         <div className="finding" aria-live="polite">
-          <span className="micro micro--coral">Why this plan breaks</span>
+          <span className={`micro ${audit.severity === "clear" ? "micro--mint" : "micro--coral"}`}>
+            {audit.severity === "clear" ? "What the audit found" : "Why this plan breaks"}
+          </span>
           <p>{audit.finding}</p>
         </div>
-        <div className="evidence">
-          <header><span className="micro micro--coral">Evidence — {critical.shortLabel}</span><b>Out {(stressRun?.dispatchLane ?? 0) + 1}</b></header>
+        <div className={`evidence${stressRun?.onTime ? " is-clear" : ""}`}>
+          <header><span className={`micro ${stressRun?.onTime ? "micro--mint" : "micro--coral"}`}>Evidence — {critical.shortLabel}</span><b>Berth {pad((stressRun?.dispatchLane ?? 0) + 1)}</b></header>
           <dl>
-            <div><dt>Earliest start</dt><dd>Slot {pad((stressRun?.dispatchStart ?? 0) + 1)}</dd></div>
+            <div><dt>Earliest start</dt><dd>Slot {pad(stressRun ? startSlot(stressRun) : 0)}</dd></div>
             <div><dt>Deadline</dt><dd>Slot {pad(critical.deadline)}</dd></div>
             <div><dt>Result</dt><dd className={stressRun?.onTime ? "is-safe" : "is-miss"}>{stressRun?.onTime ? "On time" : "Miss"}</dd></div>
           </dl>
         </div>
+        {/* The candidate the auditor searched for, and why it won — never the scenario's
+            worked example. Before the auditor has read the board there is nothing to show,
+            and once the board is the best order there is nothing left to propose: both are
+            said in words rather than filled with a plan the page already knows. */}
         <div className="proposed">
           <span className="micro micro--mint">Proposed change</span>
-          <p>Reorder to: {formatSchedule(state.scenario.robustSchedule, state.scenario)}</p>
-          <strong>{critical.shortLabel} completes by slot {pad(robustRun?.dispatchEnd ?? 0)}. {robustRun?.onTime ? "On time." : "Still at risk."}</strong>
+          {state.agentFocus === "idle"
+            ? <p>Nothing proposed yet. Run <b>Inspect</b>: the auditor searches the orders this board allows and brings back the one that survives the shift.</p>
+            : !recommendation
+              ? <strong>No change proposed. This order already clears {critical.shortLabel} inside its slot {critical.deadline} deadline with a berth offline.</strong>
+              : (
+                <>
+                  <p>Reorder to: {formatSchedule(recommendation.schedule, state.scenario)}</p>
+                  <strong>{critical.shortLabel} completes by slot {pad(proposedRun ? endSlot(proposedRun) : 0)}. {proposedRun?.onTime ? "On time." : "Still at risk."}</strong>
+                  <p className="proposed__why">{recommendation.reason}</p>
+                </>
+              )}
         </div>
       </section>
 
@@ -198,11 +262,19 @@ function AgentRail(props: ArenaProps) {
         <ul className="tools__log">
           {events.length === 0
             ? <li className="is-empty">No tool call yet. {FOCUS_LABEL[state.agentFocus]}.</li>
-            : events.slice().reverse().map((event) => <li key={event.id}><b>{event.tool}</b>{event.summary}</li>)}
+            : events.slice().reverse().map((event) => (
+              <li key={event.id} className={event.ok ? undefined : "is-refused"}>
+                <b>{event.tool}</b>
+                <span className="tools__log-body">
+                  {event.summary}
+                  <span className="tools__log-meta">
+                    {traceMeta(event).map((chip) => <i key={chip.text} className={chip.wrap ? "is-wrap" : undefined}>{chip.text}</i>)}
+                  </span>
+                </span>
+              </li>
+            ))}
         </ul>
       </details>
-
-      <DecisionGate {...props} />
     </aside>
   );
 }
@@ -238,10 +310,13 @@ function DecisionGate({ state, onStage, onConfirm, onReject, onDisruption, onRes
           ? { label: "Play another shift", run: onRestart, ready: true }
           : { label: "Review recovery", run: onStage, ready };
 
+  // The page does not claim to know who chose a staged plan: the player's own "review"
+  // button and the auditor's step 3 both arrive as the same tool call, so the copy states
+  // what is waiting rather than crediting whichever side the demo would rather name.
   const copy = pending
     ? pending.kind === "undo"
-      ? "The auditor prepared a return to the previous order. The board has not changed yet."
-      : `The auditor staged ${formatSchedule(pending.schedule, state.scenario)}. Nothing moves until you confirm.`
+      ? "A return to the previous order is prepared. The board has not changed yet."
+      : `Staged for review: ${formatSchedule(pending.schedule, state.scenario)}. Nothing moves until you confirm.`
     : state.phase === "applied"
       ? "Your plan is committed for the normal shift. Reveal the operating shock."
       : recovered

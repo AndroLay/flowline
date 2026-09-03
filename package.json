@@ -11,7 +11,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
-    "test": "node --experimental-strip-types --test tests/model.test.mts tests/tools.test.mts tests/scene-model.test.mts"
+    "test": "node --experimental-strip-types --test tests/model.test.mts tests/tools.test.mts tests/scene-model.test.mts tests/evals.test.mts"
   },
   "dependencies": {
     "react": "19.2.8",

@@ -18,7 +18,7 @@ ideas visible to a learner:
 > A plan that looks fast under normal conditions can become fragile when a
 > constrained resource changes.
 
-The game turns that idea into a small, visual, replayable exercise. The player
+The game turns that idea into a small, visual, exactly reproducible exercise. The player
 creates a schedule, the page-aware Operations Auditor exposes the causal failure,
 and the player decides whether a trade-off is worth accepting.
 
@@ -58,7 +58,7 @@ The following parts are intentionally omitted:
 
 Instead, Flowline uses four jobs, two stations, a finite slot horizon, one fixed
 disruption, and a pure deterministic simulator. This is small enough to inspect
-visually, replay exactly, test exhaustively, and explain in a short judge path.
+visually, recompute exactly, test exhaustively, and explain in a short judge path.
 
 That simplification is the point: the learner practices scheduling intuition
 before encountering the full complexity of an interactive systems challenge.

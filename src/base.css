@@ -18,10 +18,19 @@
   --ink-2: #9cb4c7;
   --ink-3: #648099;
 
+  /* Verdicts. These three say how a run ended and nothing else, on every surface. */
   --mint: #6ee3cf;
   --gold: #e0a72f;
   --coral: #ea6455;
   --blue: #2f7ac1;
+
+  /* Identity. Which job this is — never how it is doing. They are all cool and all light
+     so a job can never be mistaken for a verdict: the closest of them sits 45 ΔE from mint
+     and 92 from coral, where the old palette put three jobs at 0 from a verdict colour. */
+  --ice: #ccd6ff;
+  --azure: #5cb8ee;
+  --violet: #b585f2;
+  --cobalt: #6f8bea;
 
   --r-lg: 10px;
   --r-md: 8px;
@@ -30,7 +39,9 @@
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  --shell: 1440px;
+  /* The mockups put the content box at x56..1489 in a 1536px viewport, so the
+     shell is 1490px wide and the 28px gutter takes it the rest of the way. */
+  --shell: 1490px;
   --tl-label: 84px;
   --lift: 0;
 }
@@ -145,9 +156,9 @@ a {
 .dot-label {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 13px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 13px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-2);
@@ -155,11 +166,32 @@ a {
 }
 
 .dot-label > i {
-  width: 6px;
-  height: 6px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--ink-3);
   flex: none;
+}
+
+/* The focus rail's own head runs a notch larger than every other kicker, which is
+   a size rather than a new primitive — so it stays here instead of focus.css
+   restyling a base class. */
+.dot-label--lg {
+  font-size: 15px;
+}
+
+.dot-label--lg > i {
+  width: 10px;
+  height: 10px;
+}
+
+.dot-label--muted {
+  color: var(--ink-3);
+}
+
+.dot-label--muted > i {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink-3);
 }
 
 .dot-label--mint {
@@ -195,7 +227,7 @@ a {
 }
 
 .wordmark {
-  font-size: 31px;
+  font-size: 35px;
   font-weight: 480;
   letter-spacing: -0.028em;
   color: var(--ink);
@@ -207,18 +239,6 @@ a {
 
 .wordmark--lg {
   font-size: 52px;
-}
-
-.icon-btn {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-md);
-  background: rgb(1 12 20 / 0.5);
-  color: var(--ink-2);
-  flex: none;
 }
 
 /* --- buttons -------------------------------------------------------------- */
@@ -254,11 +274,11 @@ a {
 .btn__arrow {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   border: 1px solid currentColor;
   border-radius: 50%;
-  font-size: 12px;
+  font-size: 15px;
   opacity: 0.75;
 }
 
@@ -314,10 +334,22 @@ a {
   padding-right: 14px;
 }
 
+/* The brief's primary call to action is the one button in the product drawn at
+   display size: a 20px label, a squarer corner than the shared radius, and more
+   room on the label side than on the arrow side. */
 .btn--lg {
-  padding: 20px 22px;
-  font-size: 13px;
-  letter-spacing: 0.12em;
+  min-height: 68px;
+  padding: 16px 16px 16px 28px;
+  border-radius: 5px;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+}
+
+/* A block button spans its panel and separates label from icon itself, so it
+   keeps even side padding even at the large size. */
+.btn--block.btn--lg {
+  padding-left: 18px;
+  padding-right: 18px;
 }
 
 .link-quiet {
@@ -335,30 +367,22 @@ a {
 .link-arrow {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
   font-size: 15px;
   color: var(--ink-2);
   text-decoration: underline;
-  text-decoration-color: var(--line-2);
+  text-decoration-color: var(--mint);
   text-underline-offset: 6px;
+}
+
+/* The chevron is the mint accent in the mockup even while the words stay quiet,
+   which is what makes the link read as the second offer rather than a footnote. */
+.link-arrow > span {
+  color: var(--mint);
 }
 
 .link-arrow:hover {
   color: var(--mint);
-}
-
-.icon-btn:hover {
-  color: var(--ink);
-  border-color: var(--line-2);
-}
-
-.icon-btn svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
 }
 
 .seg {
@@ -397,6 +421,10 @@ a {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  /* The header and footer bands are drawn one viewport wide so their hairlines
+     reach both screen edges the way the mockups have them; clipping here keeps a
+     scrollbar from turning that extra width into a sideways scroll. */
+  overflow-x: clip;
   background:
     radial-gradient(920px 460px at 76% -10%, rgb(47 122 193 / 0.07), transparent 60%),
     var(--page);
@@ -411,12 +439,24 @@ a {
   gap: 0;
   width: 100%;
   max-width: var(--shell);
-  min-height: 78px;
+  min-height: 75px;
   margin: 0 auto;
   padding: 0 26px;
+}
+
+/* The band and its hairline run edge to edge in the mockup while the row inside
+   stays capped at the shell width, so they are drawn as one viewport-wide layer
+   behind the row instead of as a border on it. */
+.shell__head::before {
+  content: "";
+  position: absolute;
+  inset: 0 50% 0 auto;
+  z-index: -1;
+  width: 100vw;
   border-bottom: 1px solid var(--line);
   background: rgb(3 14 24 / 0.92);
   backdrop-filter: blur(10px);
+  transform: translateX(50%);
 }
 
 .shell__head--brief {
@@ -427,10 +467,15 @@ a {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
 
+.shell__head--focus {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
 .lockup {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 15px;
+  min-width: 0;
 }
 
 .lockup > small {
@@ -440,6 +485,11 @@ a {
   text-transform: uppercase;
   color: var(--ink-3);
   white-space: nowrap;
+  /* Nowrap without this used to push the tagline straight through the right edge of
+     a 390px header, where it was cut mid-word: "WEBMCP LEARNIN". */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shell__nav {
@@ -460,12 +510,19 @@ a {
   border-right: 1px solid var(--line);
 }
 
+.shell__head--focus .shell__nav {
+  justify-self: center;
+  padding: 0 30px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
 .shell__nav a,
 .shell__nav button {
   position: relative;
   padding: 28px 17px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -477,6 +534,9 @@ a {
   color: var(--ink);
 }
 
+/* The return out of the focus page. It shares this row with the section marks, so it has
+   to read as a way back rather than as one more tab: the arrow carries that, and the ink
+   is the page's own instead of the row's muted grey. */
 .shell__nav [aria-current="page"] {
   color: var(--ink);
 }
@@ -484,8 +544,8 @@ a {
 .shell__nav [aria-current="page"]::before {
   content: "";
   position: absolute;
-  inset: auto 17px -1px;
-  height: 2px;
+  inset: auto 17px 3px;
+  height: 3px;
   background: var(--mint);
 }
 
@@ -551,15 +611,21 @@ a {
   box-shadow: 0 0 0 3px rgb(110 227 207 / 0.18);
 }
 
+.pill--coral > i {
+  background: var(--coral);
+  box-shadow: 0 0 0 3px rgb(234 100 85 / 0.18);
+}
+
 .shell__main {
   flex: 1;
   width: 100%;
   max-width: var(--shell);
   margin: 0 auto;
-  padding: 26px 28px 40px;
+  padding: 26px 28px 28px;
 }
 
 .shell__foot {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -567,14 +633,38 @@ a {
   width: 100%;
   max-width: var(--shell);
   margin: 0 auto;
-  padding: 20px 26px 28px;
-  border-top: 1px solid var(--line);
+  padding: 18px 26px 25px;
   font-family: var(--mono);
   font-size: 10px;
-  line-height: 1.7;
+  line-height: 2.1;
   letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--ink-3);
+}
+
+/* Same treatment as the header band: the hairline reaches both screen edges
+   while the row it separates stays capped at the shell width. */
+.shell__foot::before {
+  content: "";
+  position: absolute;
+  inset: 0 50% auto auto;
+  width: 100vw;
+  border-top: 1px solid var(--line);
+  transform: translateX(50%);
+}
+
+/* Two lines, two boxes: the mark used to be one text node split by a <br>, which
+   copied and announced as "Flowline © 2026Operations lab". */
+.shell__foot-mark {
+  display: grid;
+}
+
+.shell__foot-mark > b {
+  font-weight: 500;
+}
+
+.shell__foot-mark > small {
+  font-size: inherit;
 }
 
 .shell__foot-note {
@@ -843,6 +933,86 @@ a {
   border-top: 1px solid var(--line);
 }
 
+/* --- popups --------------------------------------------------------------- */
+
+/* One panel serves every surface, delivered to the body so no ancestor can clip it:
+   the board and the bays clip their own overflow on purpose, because that clip is what
+   holds the 2.5D extrusion faces inside the panel. Fixed to the viewport and placed from
+   the measured box of whatever the pointer reached, so the arena and the 3D floor answer
+   a cursor in exactly one voice. It never takes the pointer, so it cannot steal the
+   leave event that closes it. */
+.tip {
+  position: fixed;
+  z-index: 55;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  /* The ceiling arrives inline, worked out from the same numbers that place the panel — a
+     width the stylesheet cannot know, because it depends on how much room is left on the
+     side the panel is about to open into. See src/ui/Tip.tsx. */
+  max-width: min(272px, calc(100vw - 24px));
+  padding: 8px 10px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: rgb(4 18 30 / 0.96);
+  box-shadow: 0 12px 28px rgb(1 6 12 / 0.55);
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  pointer-events: none;
+  animation: tip-in 130ms ease both;
+}
+
+/* The panel hangs off the side the target sits on, so it opens into the room the window
+   still has rather than over the thing being described. */
+.tip[data-side="top"] { transform: translate(-50%, -100%); }
+.tip[data-side="bottom"] { transform: translate(-50%, 0); }
+
+/* Near an edge the panel is pinned to it instead of centred on the target, which is what
+   keeps its lines on screen at 390px as well as at 1536px. */
+.tip[data-align="start"][data-side="top"] { transform: translate(-12px, -100%); }
+.tip[data-align="start"][data-side="bottom"] { transform: translate(-12px, 0); }
+.tip[data-align="end"][data-side="top"] { transform: translate(calc(-100% + 12px), -100%); }
+.tip[data-align="end"][data-side="bottom"] { transform: translate(calc(-100% + 12px), 0); }
+
+.tip b {
+  font-size: 1.15em;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.tip small {
+  font-size: 1em;
+  letter-spacing: 0.045em;
+  color: var(--ink-2);
+}
+
+/* What picking it does, in the mint the page already uses for the agent's own marks. */
+.tip em {
+  margin-top: 3px;
+  font-size: 0.94em;
+  font-style: normal;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+
+/* A heading reports the state of the thing it names, so a failing object stays legible
+   as failing while the cursor is on it. */
+.tip.is-at-risk b { color: var(--gold); }
+
+.tip.is-missed b,
+.tip.is-offline b,
+.tip.is-deadline b { color: var(--coral); }
+
+@keyframes tip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* --- narrow viewports ----------------------------------------------------- */
 
 @media (max-width: 900px) {
@@ -876,6 +1046,27 @@ a {
 
   .modal__cols {
     grid-template-columns: 1fr;
+  }
+}
+
+/* A phone-width header: the tagline goes rather than being clipped mid-word, and the
+   wordmark drops to a size that leaves the round counter and the bridge pill their
+   own room on the same row. */
+@media (max-width: 640px) {
+  .wordmark {
+    font-size: 24px;
+  }
+
+  .lockup {
+    gap: 10px;
+  }
+
+  .lockup > small {
+    display: none;
+  }
+
+  .shell__status {
+    gap: 8px;
   }
 }
 

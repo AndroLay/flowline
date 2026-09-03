@@ -29,6 +29,13 @@
   letter-spacing: -0.035em;
 }
 
+/* The lockup keeps its three lines, but as three boxes: the break is a layout fact
+   here rather than a hole punched through the sentence. */
+.hero__copy h1 > span,
+.hero__copy h1 > em {
+  display: block;
+}
+
 .hero__copy h1 em {
   font-style: normal;
   color: var(--mint);
@@ -209,6 +216,11 @@
   font-weight: 600;
   line-height: 1.18;
   letter-spacing: -0.03em;
+}
+
+.panel__display > span,
+.panel__display em {
+  display: block;
 }
 
 .panel__display em {
@@ -437,6 +449,17 @@
   color: var(--coral);
 }
 
+/* The evidence card is tinted by what it found. Coral is the alarm colour everywhere else
+   on the page, so a card reporting a job that holds must not keep wearing it. */
+.evidence.is-clear {
+  border-color: rgb(110 227 207 / 0.4);
+  background: rgb(110 227 207 / 0.05);
+}
+
+.evidence.is-clear header b {
+  color: var(--mint);
+}
+
 .proposed {
   display: grid;
   gap: 7px;
@@ -456,6 +479,17 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--ink);
+}
+
+/* The sentence that says why this order won the search. It sits under a 1px rule because
+   it is a different kind of claim from the two lines above it: those are the plan and its
+   result, this is the argument for them. */
+.proposed__why {
+  margin-top: 3px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(110 227 207 / 0.22);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* --- collapsed tool drawer ------------------------------------------------ */
@@ -533,6 +567,50 @@
   font-size: 10px;
   color: var(--mint);
   white-space: nowrap;
+}
+
+/* A refused call keeps its place in the log and states the code it was refused with:
+   the boundary holding is the evidence, so it is never dropped from the trace. */
+.tools__log .is-refused b {
+  color: var(--coral);
+}
+
+.tools__log-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* The recorded facts about the call, in the mono voice the rest of the page uses for
+   measured values: outcome, the revision on both sides, the focus it moved, and the
+   reduced arguments. */
+.tools__log-meta {
+  display: flex;
+  gap: 4px 8px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+.tools__log-meta i {
+  font-style: normal;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* The reduced arguments are the one line that can run long, so they take their own row
+   and wrap instead of being cut: an off-schema key hidden behind an ellipsis would not
+   be evidence. Every other chip is short enough to stay on one line. */
+.tools__log-meta .is-wrap {
+  flex-basis: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tools__log .is-refused .tools__log-meta i:first-child {
+  color: var(--coral);
 }
 
 .tools__log .is-empty {
@@ -670,185 +748,6 @@
   border-color: rgb(110 227 207 / 0.4);
 }
 
-/* --- focus overlay -------------------------------------------------------- */
-
-.focus-view {
-  width: min(1000px, 100%);
-}
-
-.focus-view__actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: none;
-}
-
-.focus-view__body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px;
-  gap: 14px;
-}
-
-.focus-view__viewport {
-  position: relative;
-  min-height: 300px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #030f1a;
-  overflow: hidden;
-}
-
-.focus-view__canvas {
-  width: 100%;
-  height: 100%;
-  min-height: 300px;
-}
-
-.focus-view__overlay {
-  position: absolute;
-  inset: auto 12px 12px;
-  display: grid;
-  gap: 3px;
-  padding: 10px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-md);
-  background: rgb(1 12 20 / 0.88);
-  font-size: 12px;
-  color: var(--ink-2);
-}
-
-.focus-view__overlay b {
-  color: var(--coral);
-}
-
-.focus-view__overlay small {
-  font-size: 11px;
-  color: var(--ink-3);
-}
-
-.focus-view__stamp {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  display: flex;
-  gap: 6px;
-}
-
-.focus-view__stamp b {
-  padding: 3px 8px;
-  border: 1px solid var(--line-2);
-  border-radius: 999px;
-  background: rgb(1 12 20 / 0.8);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-2);
-}
-
-.focus-view__inspector {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: rgb(1 12 20 / 0.5);
-}
-
-.focus-view__inspector > div {
-  display: grid;
-  gap: 2px;
-}
-
-.focus-view__inspector strong {
-  font-size: 13px;
-}
-
-.focus-view__inspector small {
-  font-size: 11px;
-  color: var(--ink-3);
-}
-
-.focus-view__path {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  line-height: 1.6;
-  color: var(--ink-2);
-}
-
-.focus-view__finding {
-  padding: 9px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--ink-3);
-  border-radius: var(--r-md);
-  font-size: 12px;
-  color: var(--ink-2);
-}
-
-.focus-view__finding.is-critical {
-  border-left-color: var(--coral);
-}
-
-.focus-view__finding.is-watch {
-  border-left-color: var(--gold);
-}
-
-.focus-view__finding.is-clear {
-  border-left-color: var(--mint);
-}
-
-.focus-view__controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.focus-view__group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.focus-view__group > .micro {
-  width: 100%;
-}
-
-.focus-view__group button {
-  display: grid;
-  gap: 1px;
-  padding: 6px 9px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: rgb(1 12 20 / 0.55);
-  text-align: left;
-}
-
-.focus-view__group button b {
-  font-size: 11.5px;
-  font-weight: 570;
-}
-
-.focus-view__group button small {
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--ink-3);
-}
-
-.focus-view__group button.is-on {
-  border-color: var(--mint);
-  background: rgb(110 227 207 / 0.1);
-}
-
-.focus-view__semantic {
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--ink-3);
-}
-
 /* --- responsive ----------------------------------------------------------- */
 
 @media (max-width: 1200px) {
@@ -856,7 +755,12 @@
     grid-template-columns: minmax(0, 1fr) 320px;
   }
 
+  /* Two columns no longer fit three rails, so the objective panels drop to a full-width
+     row — and they drop *below* the board. Left of a wide board they are context you read
+     past; stacked above it they are four panels between the player and the thing the
+     game is about. The board leads, and the briefing follows it. */
   .rail--objective {
+    order: 2;
     grid-column: 1 / -1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -881,12 +785,9 @@
     grid-template-columns: 1fr;
   }
 
+  /* One column, so the order set above is the reading order: board, then the decision
+     and the auditor's case, then the briefing panels. */
   .rail--objective {
-    grid-template-columns: 1fr;
-  }
-
-  .focus-view__body,
-  .focus-view__controls {
     grid-template-columns: 1fr;
   }
 }

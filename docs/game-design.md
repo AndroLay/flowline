@@ -50,7 +50,8 @@ The Operations Auditor reads the active board and can:
 - inspect the live revision;
 - identify the active bottleneck;
 - run the one-berth-offline stress test;
-- compare the robust reference order.
+- compare any complete order it names, searched through the same evaluator the board
+  uses rather than read from a reference answer.
 
 The audit is explanatory. It does not decide what the player must value.
 
