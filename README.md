@@ -80,10 +80,10 @@ The bundle uses a relative `base`, so it resolves its own assets from whatever s
 on — which is how <https://androlay.github.io/flowline/> works. That deployment was made by hand: the
 built `dist/` was pushed to the `gh-pages` branch root with a `.nojekyll` marker, and Pages serves it
 with its legacy builder. `.github/workflows/pages.yml` declares the same gates on a clean Node 22
-runner and would deploy `dist/` on push; it has never executed. Both attempts, one per push, ended in
-four seconds with no runner assigned — an account-level Actions restriction refused the job before it
-started — so the failure says nothing about the workflow, and nothing on the live site was produced by
-it. Locally, `pnpm build && pnpm preview` gives you the same bundle.
+runner and would deploy `dist/` on push; it has never executed. Both attempts, one per push, ended
+three and four seconds in with no runner assigned — an account-level Actions restriction refused the
+job before it started — so the failure says nothing about the workflow, and nothing on the live site
+was produced by it. Locally, `pnpm build && pnpm preview` gives you the same bundle.
 
 ## Game loop
 
