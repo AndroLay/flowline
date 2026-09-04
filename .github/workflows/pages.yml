@@ -17,6 +17,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # `configure-pages` writes the site's build type, which the read-only default
+    # at the top of this file does not allow.
+    permissions:
+      contents: read
+      pages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,6 +45,16 @@ jobs:
         run: pnpm typecheck
       - name: Build
         run: pnpm build
+      # The live site was hand-published to the `gh-pages` root, so the site's source is
+      # still that branch, and `deploy-pages` takes a deployment from the source branch it
+      # is configured with — a run on `main` would be turned away even with a runner. This
+      # step moves the source to GitHub Actions. It sits after the gates deliberately: the
+      # switch happens only in a run that already has something to serve. Its `base_path`
+      # output is unused, for the reason on the next step.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
       # `base` is relative in vite.config.ts, so the bundle resolves its own
       # assets from whatever subpath Pages serves it on.
       - name: Upload Pages artifact

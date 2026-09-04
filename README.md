@@ -84,7 +84,11 @@ runner and would deploy `dist/` on push; it has never executed. It runs on every
 every run so far has been refused before a runner was assigned — an account-level Actions restriction
 ends each one within seconds, with `build` failed and `deploy` skipped — so the run list holds one such
 refusal per push, none of them says anything about the workflow itself, and nothing on the live site
-was produced by it. Locally, `pnpm build && pnpm preview` gives you the same bundle.
+was produced by it. The four commands it pins — install from the frozen lockfile, test, typecheck,
+build — were run separately on Node 22 with the pinned pnpm, against a fresh clone of this
+repository at the published commit, and they reproduce the bundle this site serves byte for byte. So
+what is unproven is the pipeline, not the build. Locally, `pnpm build && pnpm preview` gives you the
+same bundle.
 
 ## Game loop
 
