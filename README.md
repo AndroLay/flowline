@@ -63,13 +63,13 @@ call — the page does all of it in the tab.
 - **A shipped WebMCP client has never driven this page.** A model has, in six separate sessions:
   three on a developer machine and three against the hosted URL. Given plain-language turns that
   named no tool, `claude-opus-5` chose 27 calls locally across seven of the eight tools Chromium's
-  own WebMCP registry held for the page, and 33 more on the hosted build. It read the board, named
+  own WebMCP registry held for the page, and 24 more on the hosted build. It read the board, named
   the bottleneck, stress-tested running orders it invented itself, staged a plan and left it pending
   for a human — and in one session read the disrupted board and deliberately wrote nothing. The
-  page's own guards refused it seven times across the six sessions; twice it diagnosed the refusal
+  page's own guards refused it six times across the six sessions; twice it diagnosed the refusal
   and satisfied it unaided. Every session needed an experimental Chromium flag and a local stdio
-  bridge, all six were one machine, one model and prompts the author wrote, and each hosted session
-  stopped at its own spending cap with the trajectory logged and no closing answer written. So they
+  bridge, all six were one machine, one model and prompts the author wrote, and each ran under a
+  spending cap it finished inside, so nothing here says how a longer session behaves. They
   say the surface is legible to a model; they do not say a browser ships this surface today, or that
   the path is stable. Those transcripts are kept privately with the other measurement runs.
 - **Performance on real hardware, in either direction.** Every frame figure ever measured for
