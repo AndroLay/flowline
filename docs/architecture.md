@@ -7,9 +7,11 @@ Flowline is a static, local-first React application. It has no backend, database
 The package is self-contained on purpose: it builds and tests on its own, and produces a
 static bundle with a relative `base` that runs from any subpath, with no dependency on a
 sibling project, a shared library, or any build step outside its own `package.json`.
-That relative `base` is what makes the deployment trivial: the same five files are served at
-`https://androlay.github.io/flowline/` from the `gh-pages` branch root, byte for byte identical to a
-local `dist/`, with no rewrite step and nothing running server-side.
+That relative `base` is what makes the deployment trivial: the five files at
+`https://androlay.github.io/flowline/` are the `gh-pages` branch root, copied there from a `dist/`
+byte for byte, with no rewrite step and nothing running server-side. The live site is whatever
+`dist/` was last published by hand, so after a source change it serves the build before it until
+the next publish.
 
 ## Layers
 
@@ -69,6 +71,24 @@ The proposal panel clearly separates:
 3. human confirmation;
 4. committed receipt;
 5. exact undo proposal.
+
+### `src/ui/PlanBoard.tsx`
+
+The queue rail and the 2.5D floor draw the same jobs at the same queue positions, so one hook
+holds the gesture for both. A job can be moved with a finger, with the arrow keys — `Home` and
+`End` for the ends — or with a mouse drag, and it can be dragged from either surface onto the
+other: a drop is resolved by the queue position of whatever is underneath, found by hit-testing
+the whole element stack and skipping the node in hand, which is necessary because the held job
+travels with the pointer. Touch drags follow the pointer by writing two custom properties on the
+held element rather than by re-rendering the board, and both surfaces mark what is in the air and
+what is under it.
+
+Mouse input is left to HTML5 drag, which draws its own ghost; touch and pen use pointer events
+with capture. Every path ends in the same `reorderJob` transition the tools' edits go through, so
+a gesture cannot move the board where a tool could not — it is refused while a proposal waits for
+review, and outside the planning and recovery phases. Offline stands are not drop targets, and
+the board draws no drag handles at all when it is not editable, which is why the brief's preview
+of the same component is inert.
 
 ### `src/visual/scene-model.ts`
 
@@ -190,12 +210,12 @@ what the timeline already states. Nothing is playable only in 3D.
 The internal performance budget is measured separately from correctness. The current
 headless Chromium run — ANGLE/SwiftShader, no GPU, 1440 × 900 desktop and 390 × 844
 mobile — clears ten of its eleven budgets and still does **not** close the performance
-gate. The disposable floor becomes ready 270 ms after it is asked for on desktop and
-262 ms on mobile, inside the 1000 ms budget, and opening it blocks the main thread in two
-tasks whose longest is 123 ms on desktop and 116 ms on mobile, inside the budget of no
+gate. The disposable floor becomes ready 296 ms after it is asked for on desktop and
+168 ms on mobile, inside the 1000 ms budget, and opening it blocks the main thread in two
+tasks whose longest is 131 ms on desktop and 80 ms on mobile, inside the budget of no
 single task over 200 ms. The failing budget is frame cadence while picks are being
 clicked: against a median of at least 55 FPS, the desktop sample reads 29.94 median FPS
-with a 116.7 ms worst frame, while the 390 px sample reads 59.88 FPS and is still not a
+with a 133.4 ms worst frame, while the 390 px sample reads 59.88 FPS and is still not a
 phone result. With the floor open and idle both viewports read 59.88 FPS, but that figure
 measures a demand-driven loop that is drawing nothing — requestAnimationFrame cadence,
 not throughput. All of these are environment-specific software-rendering measurements and
@@ -203,14 +223,15 @@ they bound nothing about real hardware in either direction.
 
 Those figures moved again against the previous run of the same surface, and the movement
 is run-to-run variance on a software rasteriser — **not a code fix and not a regression**.
-Nothing in the renderer changed across the runs; the two source edits behind them were one
-overlay heading sentence and the tool annotations. The floor-open task budget failed on the
-2026-09-02 five-window sample, whose long tasks ran 373–564 ms on every open, and passes
-here; the picks cadence has now read 30.03, then 29.94, then 20.04 twice, and 29.94 again —
-worst frame 116.7 ms, then 150 ms, then 116.7 ms — across five samples of the same surface,
-and failed its budget on all five. The 2026-09-02 sampler also discarded intervals above
-100 ms, so the samples are not directly comparable to begin with. Five software samples that
-answer three different ways cannot settle this gate, so it stays open and real-hardware
-behaviour stays unmeasured. A real-device run is required before making a final Adopt
-decision for the 3D layer; if the gate fails, the safe release choice is to simplify or
-defer 3D while keeping the 2.5D game playable.
+Nothing in the renderer changed across the runs; the source edits behind them were one
+overlay heading sentence, the tool annotations, and the gesture code on the 2.5D board,
+which the floor does not run. The floor-open task budget failed on the 2026-09-02
+five-window sample, whose long tasks ran 373–564 ms on every open, and passes here; the
+picks cadence has now read 30.03, then 29.94, then 20.04 twice, then 29.94 twice more —
+worst frame 116.7 ms, then 150 ms, then 116.7 ms, then 133.4 ms — across six samples of
+the same surface, and failed its budget on all six. The 2026-09-02 sampler also
+discarded intervals above 100 ms, so the samples are not directly comparable to begin
+with. Six software samples that answer three different ways cannot settle this gate, so it
+stays open and real-hardware behaviour stays unmeasured. A real-device run is required
+before making a final Adopt decision for the 3D layer; if the gate fails, the safe release
+choice is to simplify or defer 3D while keeping the 2.5D game playable.

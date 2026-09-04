@@ -176,14 +176,25 @@
 }
 
 /* A chip that can be dragged says so with the cursor, and while it is in the air it thins
-   out so the row reads as a gap waiting to be filled rather than a list that lost a job. */
+   out so the row reads as a gap waiting to be filled rather than a list that lost a job.
+   A finger gets both axes, not just the sideways one: the queue wraps to two rows on a narrow
+   screen, so a reorder there is a drag down the screen, and leaving the vertical axis to the
+   page would make exactly those moves impossible. The cost is that a shift cannot be scrolled
+   from a chip — the arrows and the keys beside it stay for anyone who would rather not drag. */
 .chip[draggable="true"] {
   cursor: grab;
+  touch-action: none;
 }
 
 .queue__slot.is-held .chip {
   opacity: 0.4;
   cursor: grabbing;
+  /* Only a finger or a pen sets these: a native drag draws its own ghost, so nothing has to
+     be moved for a mouse. The chip follows the pointer instead of standing still, which is
+     the whole difference between dragging a job and watching a highlight move. */
+  transform: translate(var(--drag-x, 0), var(--drag-y, 0));
+  position: relative;
+  z-index: 2;
 }
 
 /* The slot the chip would land in, marked on the number rather than between the chips: a
@@ -416,6 +427,32 @@
 
 .slab.is-on {
   box-shadow: 0 0 0 2px rgb(255 255 255 / 0.3);
+}
+
+/* The floor answers the same gestures the queue does, so it carries the same two marks — and
+   takes both axes for the same reason: at narrow widths the bays stack, so a job may have to
+   travel down the screen to reach the other bay. */
+.slab[draggable="true"] {
+  cursor: grab;
+  touch-action: none;
+}
+
+.slab.is-held {
+  opacity: 0.45;
+  cursor: grabbing;
+  /* Set only by a finger or a pen — a native drag carries its own ghost — and untransitioned,
+     because a 160ms ease on the way to the pointer reads as a slab that will not keep up.
+     Lifted a layer while it travels, or it would pass under the stands it is crossing. */
+  transform: translate(var(--drag-x, 0), var(--drag-y, 0));
+  transition: none;
+  z-index: 2;
+}
+
+/* The stand the job would take, ringed in mint rather than white: white already means
+   selected, and the two states can be on at once. */
+.slab.is-over {
+  box-shadow: 0 0 0 2px var(--mint);
+  transform: translateY(-3px);
 }
 
 .slab__name {

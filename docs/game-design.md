@@ -41,7 +41,7 @@ The player sees the objective and the two-station pipeline. The guide explains t
 
 ### 2. Plan
 
-The player reorders job cards. The center timeline immediately shows preparation, dispatch lanes, deadlines, waiting, and current revision.
+The player reorders job cards with a finger, with the arrow keys — `Home` and `End` for the ends — or with a mouse drag, and can do it from the queue rail or from the 2.5D floor, including dragging from either surface onto the other. The center timeline immediately shows preparation, dispatch lanes, deadlines, waiting, and current revision.
 
 ### 3. Audit
 

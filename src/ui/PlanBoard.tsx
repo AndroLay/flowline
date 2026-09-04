@@ -1,5 +1,5 @@
-import type { CSSProperties, DragEvent } from "react";
-import { useState } from "react";
+import type { CSSProperties, DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
+import { useRef, useState } from "react";
 import { criticalJob, endSlot, getJob, slots, slotWindow, type JobId, type JobVerdict, type Scenario, type Schedule, type ScheduleEvaluation } from "../domain/model.ts";
 import { floorPlacements, type SceneSite } from "../visual/scene-model.ts";
 import { tipSentence, useTip, type TipBinder, type TipContent } from "./Tip.tsx";
@@ -62,6 +62,220 @@ function jobTip({ job, run, index, tag, queueLength, action }: {
 }
 
 /**
+ * One sentence for every surface a job can be moved from, because it is the same move: a chip
+ * in the queue, a stand on the floor, and a drag that starts on one and ends on the other all
+ * end in the same call. Said once here so no surface can promise a gesture another refuses.
+ */
+const MOVE_ACTION = "Drag it onto another job to take that queue slot; the arrow keys nudge it, Home and End send it to the ends";
+
+/** How far a finger travels before a tap becomes a drag, in CSS pixels. */
+const DRAG_SLOP = 7;
+
+/** What a job spreads onto itself to become something the player can pick up. */
+type Grip = Partial<{
+  draggable: boolean;
+  onDragStart: (event: DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  onPointerDown: (event: PointerEvent<HTMLElement>) => void;
+  onPointerMove: (event: PointerEvent<HTMLElement>) => void;
+  onPointerUp: (event: PointerEvent<HTMLElement>) => void;
+  onPointerCancel: (event: PointerEvent<HTMLElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  onClickCapture: (event: MouseEvent<HTMLElement>) => void;
+}>;
+
+/** What the ground under a job spreads to become a slot a job can be dropped into. */
+type Zone = Partial<{
+  "data-queue-index": number;
+  onDragEnter: () => void;
+  onDragOver: (event: DragEvent<HTMLElement>) => void;
+  onDrop: (event: DragEvent<HTMLElement>) => void;
+}>;
+
+/** A finger or a pen mid-gesture: where it went down, and what it went down on. */
+type Grab = { index: number; x: number; y: number; moved: boolean; node: HTMLElement };
+
+/** The move in flight, and what the board hands to everything that can be moved. */
+type Moves = {
+  /** Whether this board may be reordered at all: off on the brief preview and once the shift runs. */
+  on: boolean;
+  /** Queue position of the job in hand. */
+  from?: number;
+  /** Queue position a drop would land on. */
+  over?: number;
+  grip: (index: number, jobId: JobId) => Grip;
+  zone: (index: number) => Zone;
+  /** One place earlier or later, for the buttons beside a chip. */
+  step: (index: number, delta: number) => void;
+};
+
+/**
+ * The one gesture machine on this board. Every surface draws a job at a queue position, so a
+ * move is always the same move — take the job standing at `from`, stand it at `to` — and all
+ * three gestures below end in that one call:
+ *
+ * - a native drag, which is what a mouse has always used here and draws its own ghost for free;
+ * - a pointer drag, which is the half a native drag never had. `dragstart` does not fire for a
+ *   finger or a pen, so a touch device used to be left with the two arrow buttons alone;
+ * - the keys, for a player already on the keyboard or unable to aim a drag at all.
+ *
+ * The drop target is looked up by queue position out of the document rather than out of one
+ * surface's own list, so a drag that starts on a chip can land on a stand on the floor and the
+ * other way round. The two surfaces are one plan seen twice; a gesture crossing between them
+ * is not a special case, and nothing here has to know which surface it was called from.
+ */
+function useReorderGesture(onReorder: ((from: number, to: number) => void) | undefined, length: number): Moves {
+  const [from, setFrom] = useState<number>();
+  const [over, setOver] = useState<number>();
+  // Gesture bookkeeping the board must not redraw for: where the finger went down, whether it
+  // has travelled far enough to be a drag rather than a tap, and the node it started on — whose
+  // offset is written straight to the DOM, so following a finger costs one style write per move
+  // instead of one render of the whole board.
+  const held = useRef<Grab | undefined>(undefined);
+  const dragging = useRef(false);
+  const on = Boolean(onReorder);
+
+  function rest(node?: HTMLElement) {
+    const at = node ?? held.current?.node;
+    at?.style.removeProperty("--drag-x");
+    at?.style.removeProperty("--drag-y");
+    held.current = undefined;
+    setFrom(undefined);
+    setOver(undefined);
+  }
+
+  /** The call every gesture ends in. `at` is passed by the gestures that know it first-hand. */
+  function drop(to: number, at = from) {
+    rest();
+    // Putting a job back where it already stood is not a revision. Saying so here is what keeps
+    // an audit run against this order from being thrown away by a gesture that changed nothing.
+    if (at === undefined || at === to) return;
+    onReorder?.(at, to);
+  }
+
+  function step(index: number, delta: number) {
+    const to = index + delta;
+    if (!on || to < 0 || to > length - 1) return;
+    onReorder?.(index, to);
+  }
+
+  /**
+   * Which queue position, if any, is under a point on the screen. The whole stack at that point
+   * is read rather than only its top element, because the job in hand travels with the pointer:
+   * it is therefore the topmost thing under it for the entire drag, and a single hit test would
+   * report every drop as a job landing back on itself. The slot the job came from is skipped for
+   * the same reason — a chip is carried by its own slot, so ignoring the chip alone is not enough.
+   */
+  function positionAt(x: number, y: number, ignore?: HTMLElement) {
+    for (const element of document.elementsFromPoint(x, y)) {
+      const zone = element.closest<HTMLElement>("[data-queue-index]");
+      if (!zone || (ignore && zone.contains(ignore))) continue;
+      const index = Number(zone.dataset.queueIndex);
+      return Number.isInteger(index) ? index : undefined;
+    }
+    return undefined;
+  }
+
+  // A board nobody may edit hands out nothing: no drop zones in the document, no drag cursor,
+  // and no keys taken off a chip that is only there to be read.
+  if (!on) return { on, grip: () => ({}), zone: () => ({}), step };
+
+  return {
+    on,
+    from,
+    over,
+    grip: (index, jobId) => ({
+      draggable: true,
+      onDragStart: (event) => {
+        // A drag with an empty payload does not start in every browser, and the one thing
+        // worth carrying is which job is in the air.
+        event.dataTransfer.setData("text/plain", jobId);
+        event.dataTransfer.effectAllowed = "move";
+        setFrom(index);
+      },
+      onDragEnd: () => rest(),
+      // A mouse is left to the native drag above. `pointerdown` would otherwise start a second
+      // gesture over the top of it, and two machines deciding what is in the air is how a drag
+      // ends up moving the wrong job.
+      onPointerDown: (event) => {
+        if (event.pointerType === "mouse" || event.button !== 0) return;
+        held.current = { index, x: event.clientX, y: event.clientY, moved: false, node: event.currentTarget };
+        dragging.current = false;
+      },
+      onPointerMove: (event) => {
+        const grab = held.current;
+        if (!grab) return;
+        const dx = event.clientX - grab.x;
+        const dy = event.clientY - grab.y;
+        if (!grab.moved) {
+          if (Math.abs(dx) + Math.abs(dy) < DRAG_SLOP) return;
+          grab.moved = true;
+          dragging.current = true;
+          // Captured, so the rest of the gesture keeps arriving here once the finger has left
+          // the job it started on — which is every drag that goes anywhere.
+          grab.node.setPointerCapture(event.pointerId);
+          setFrom(index);
+        }
+        grab.node.style.setProperty("--drag-x", `${Math.round(dx)}px`);
+        grab.node.style.setProperty("--drag-y", `${Math.round(dy)}px`);
+        const at = positionAt(event.clientX, event.clientY, grab.node);
+        setOver(at === index ? undefined : at);
+      },
+      onPointerUp: (event) => {
+        const grab = held.current;
+        if (!grab?.moved) {
+          held.current = undefined;
+          return;
+        }
+        const at = positionAt(event.clientX, event.clientY, grab.node);
+        if (at === undefined) rest(grab.node);
+        else drop(at, grab.index);
+      },
+      // A finger the browser took for a page scroll, or a pen lifted off the edge of the
+      // screen: the gesture is over, and nothing moved.
+      onPointerCancel: (event) => rest(event.currentTarget),
+      onKeyDown: (event) => {
+        const to = event.key === "ArrowLeft" ? index - 1
+          : event.key === "ArrowRight" ? index + 1
+          : event.key === "Home" ? 0
+          : event.key === "End" ? length - 1
+          : undefined;
+        if (to === undefined) return;
+        // Held even where the move is refused at the end of the queue: Home and End scroll the
+        // page, and losing your place mid-edit reads as the board itself having jumped.
+        event.preventDefault();
+        if (to !== index && to >= 0 && to <= length - 1) onReorder?.(index, to);
+      },
+      onClickCapture: (event) => {
+        // The click that ends a drag is not a click on the job. Without this, letting go over
+        // another stand would move the job and then select whatever it landed on as well.
+        if (!dragging.current) return;
+        dragging.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      },
+    }),
+    zone: (index) => ({
+      "data-queue-index": index,
+      onDragEnter: () => setOver(index),
+      onDragOver: (event) => {
+        if (from === undefined) return;
+        // Without this the browser refuses the drop and the whole gesture ends nowhere, which
+        // is the classic way a drag looks broken.
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        if (over !== index) setOver(index);
+      },
+      onDrop: (event) => {
+        event.preventDefault();
+        drop(index);
+      },
+    }),
+    step,
+  };
+}
+
+/**
  * The shared "LIVE PLAN" surface. The brief page renders it dense as a preview;
  * the arena renders it full size and editable. Both read the same evaluation, so
  * there is only ever one version of the plan on screen.
@@ -95,6 +309,10 @@ export function PlanBoard({
   // or a slab would be cut in half. Threading one binder down also means only one panel
   // can ever be open, however many things on the board answer a cursor.
   const { tipProps, dock } = useTip();
+  // One gesture machine for both surfaces: the queue and the floor are the same plan drawn
+  // twice, so a move is the same move wherever the player starts it — and a drag begun on one
+  // of them may land on the other.
+  const moves = useReorderGesture(editable ? onReorder : undefined, schedule.length);
   return (
     <section className={`board${dense ? " board--dense" : ""}`} aria-label="Live plan">
       <header className="board__head">
@@ -110,52 +328,32 @@ export function PlanBoard({
         scenario={scenario}
         schedule={schedule}
         evaluation={evaluation}
-        editable={editable}
         selectedJobId={selectedJobId}
         onSelectJob={onSelectJob}
-        onReorder={onReorder}
+        moves={moves}
         tipProps={tipProps}
       />
-      <FloorBays scenario={scenario} schedule={schedule} evaluation={evaluation} dense={dense} selectedJobId={selectedJobId} onSelectJob={onSelectJob} tipProps={tipProps} />
+      <FloorBays scenario={scenario} schedule={schedule} evaluation={evaluation} dense={dense} selectedJobId={selectedJobId} onSelectJob={onSelectJob} moves={moves} tipProps={tipProps} />
       <ScheduleTimeline scenario={scenario} evaluation={evaluation} dense={dense} />
       {dock}
     </section>
   );
 }
 /**
- * The queue is the one thing on this board the player owns, so it answers to three
- * gestures that all end in the same call: drag a chip onto a slot, press the arrows
- * beside it, or hold a chip and use the arrow keys. A finger has no HTML5 drag, so the
- * arrows are not a fallback for the drag — they are the other half of it.
+ * The queue is the one thing on this board the player owns, and it answers to every gesture the
+ * board has: drag a chip onto a slot — with a mouse, a finger or a pen — press the arrows beside
+ * it, or hold a chip and use the arrow keys, Home or End. A chip may also be dropped on a stand
+ * on the floor below, because that stand is the same job at the same queue position.
  */
-function QueueOrder({ scenario, schedule, evaluation, editable, selectedJobId, onSelectJob, onReorder, tipProps }: {
+function QueueOrder({ scenario, schedule, evaluation, selectedJobId, onSelectJob, moves, tipProps }: {
   scenario: Scenario;
   schedule: Schedule;
   evaluation: ScheduleEvaluation;
-  editable: boolean;
   selectedJobId?: JobId;
   onSelectJob?: (jobId: JobId) => void;
-  onReorder?: (from: number, to: number) => void;
+  moves: Moves;
   tipProps: TipBinder;
 }) {
-  // Which chip is in the air, and which slot it is over. Both are gesture state, not plan
-  // state: nothing here touches the schedule until the drop lands, and what comes back
-  // from the drop is the only record that the move happened.
-  const [dragFrom, setDragFrom] = useState<number>();
-  const [dragOver, setDragOver] = useState<number>();
-  const drags = editable && Boolean(onReorder);
-
-  function land(to: number) {
-    const from = dragFrom;
-    setDragFrom(undefined);
-    setDragOver(undefined);
-    // Dropping a chip back on its own slot is not a revision. Saying so here keeps the
-    // audit that was run against this order from being thrown away by a gesture that
-    // changed nothing.
-    if (from === undefined || from === to) return;
-    onReorder?.(from, to);
-  }
-
   const staggered = scenario.jobs.some((job) => job.releaseAt > 0);
   const starved = evaluation.metrics.prepStarved;
   const queued = evaluation.metrics.totalIntakeWait;
@@ -177,7 +375,7 @@ function QueueOrder({ scenario, schedule, evaluation, editable, selectedJobId, o
           const job = getJob(scenario, jobId);
           const selected = selectedJobId === job.id;
           const run = evaluation.jobs.find((item) => item.jobId === jobId);
-          const held = dragFrom === index;
+          const held = moves.from === index;
           // A chip that reports its run says what the run is; one on the brief preview,
           // where nothing is wired to a click, promises nothing.
           const tip = run && jobTip({
@@ -186,23 +384,14 @@ function QueueOrder({ scenario, schedule, evaluation, editable, selectedJobId, o
             index,
             queueLength: schedule.length,
             action: onSelectJob
-              ? drags ? "Drag it onto a slot, or focus it and use the arrow keys" : "Click to focus this job"
+              ? moves.on ? MOVE_ACTION : "Click to focus this job"
               : undefined,
           });
           return (
             <li
-              className={`queue__slot${held ? " is-held" : ""}${dragOver === index && !held ? " is-over" : ""}`}
+              className={`queue__slot${held ? " is-held" : ""}${moves.over === index && !held ? " is-over" : ""}`}
               key={job.id}
-              onDragEnter={drags ? () => setDragOver(index) : undefined}
-              onDragOver={drags ? (event: DragEvent<HTMLLIElement>) => {
-                if (dragFrom === undefined) return;
-                // Without this the browser refuses the drop and the whole gesture ends
-                // nowhere, which is the classic way a drag looks broken.
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-                if (dragOver !== index) setDragOver(index);
-              } : undefined}
-              onDrop={drags ? (event: DragEvent<HTMLLIElement>) => { event.preventDefault(); land(index); } : undefined}
+              {...moves.zone(index)}
             >
               <span className="queue__n">{index + 1}</span>
               <button
@@ -210,21 +399,8 @@ function QueueOrder({ scenario, schedule, evaluation, editable, selectedJobId, o
                 className={`chip chip--${job.tint}${selected ? " is-on" : ""}`}
                 aria-pressed={selected}
                 aria-label={tip ? tipSentence(tip) : undefined}
-                draggable={drags}
                 onClick={() => onSelectJob?.(job.id)}
-                onDragStart={drags ? (event: DragEvent<HTMLButtonElement>) => {
-                  // A drag with an empty payload does not start in every browser, and the
-                  // one thing worth carrying is which job is in the air.
-                  event.dataTransfer.setData("text/plain", job.id);
-                  event.dataTransfer.effectAllowed = "move";
-                  setDragFrom(index);
-                } : undefined}
-                onDragEnd={drags ? () => { setDragFrom(undefined); setDragOver(undefined); } : undefined}
-                onKeyDown={(event) => {
-                  if (!drags) return;
-                  if (event.key === "ArrowLeft" && index > 0) { event.preventDefault(); onReorder?.(index, index - 1); }
-                  if (event.key === "ArrowRight" && index < schedule.length - 1) { event.preventDefault(); onReorder?.(index, index + 1); }
-                }}
+                {...moves.grip(index, job.id)}
                 {...(tip ? tipProps(tip) : {})}
               >
                 {job.shortLabel}
@@ -237,10 +413,10 @@ function QueueOrder({ scenario, schedule, evaluation, editable, selectedJobId, o
                   S{pad(job.releaseAt + 1)}
                 </span>
               )}
-              {drags && onReorder && (
+              {moves.on && (
                 <span className="queue__move">
-                  <button type="button" disabled={index === 0} onClick={() => onReorder(index, index - 1)} aria-label={`Move ${job.label} earlier in the queue`}>◂</button>
-                  <button type="button" disabled={index === schedule.length - 1} onClick={() => onReorder(index, index + 1)} aria-label={`Move ${job.label} later in the queue`}>▸</button>
+                  <button type="button" disabled={index === 0} onClick={() => moves.step(index, -1)} aria-label={`Move ${job.label} earlier in the queue`}>◂</button>
+                  <button type="button" disabled={index === schedule.length - 1} onClick={() => moves.step(index, 1)} aria-label={`Move ${job.label} later in the queue`}>▸</button>
                 </span>
               )}
             </li>
@@ -251,14 +427,20 @@ function QueueOrder({ scenario, schedule, evaluation, editable, selectedJobId, o
   );
 }
 
-/** 2.5D read of the same schedule: where each job physically sits on the floor. */
-function FloorBays({ scenario, schedule, evaluation, dense, selectedJobId, onSelectJob, tipProps }: {
+/**
+ * 2.5D read of the same schedule: where each job physically sits on the floor. The stands are
+ * placed by what the plan does with each job, not by queue order, so a job moved here lands
+ * wherever its new order puts it — which is the point of moving it from the floor rather than
+ * from the queue: you are looking at the bay that is about to be busy while you decide.
+ */
+function FloorBays({ scenario, schedule, evaluation, dense, selectedJobId, onSelectJob, moves, tipProps }: {
   scenario: Scenario;
   schedule: Schedule;
   evaluation: ScheduleEvaluation;
   dense: boolean;
   selectedJobId?: JobId;
   onSelectJob?: (jobId: JobId) => void;
+  moves: Moves;
   tipProps: TipBinder;
 }) {
   const stands = floorPlacements(evaluation);
@@ -284,6 +466,7 @@ function FloorBays({ scenario, schedule, evaluation, dense, selectedJobId, onSel
         queueLength={placements.length}
         selectedJobId={selectedJobId}
         onSelectJob={onSelectJob}
+        moves={moves}
         tipProps={tipProps}
       />
       {/* The gate is the one place a job crosses from prep to dispatch, so a job that
@@ -292,7 +475,7 @@ function FloorBays({ scenario, schedule, evaluation, dense, selectedJobId, onSel
       <div className="bays__handoff">
         <span className="bays__arrow" aria-hidden="true">→</span>
         {gate && (
-          <Slab placement={gate} dense={dense} queueLength={placements.length} selectedJobId={selectedJobId} onSelectJob={onSelectJob} tipProps={tipProps} />
+          <Slab placement={gate} dense={dense} queueLength={placements.length} selectedJobId={selectedJobId} onSelectJob={onSelectJob} moves={moves} tipProps={tipProps} />
         )}
       </div>
       <Bay
@@ -306,12 +489,13 @@ function FloorBays({ scenario, schedule, evaluation, dense, selectedJobId, onSel
         queueLength={placements.length}
         selectedJobId={selectedJobId}
         onSelectJob={onSelectJob}
+        moves={moves}
         tipProps={tipProps}
       />
     </div>
   );
 }
-function Bay({ title, detail, blocks, dense, alert = false, idleStands = 0, offlineNote, queueLength, selectedJobId, onSelectJob, tipProps }: {
+function Bay({ title, detail, blocks, dense, alert = false, idleStands = 0, offlineNote, queueLength, selectedJobId, onSelectJob, moves, tipProps }: {
   title: string;
   detail: string;
   blocks: BlockPlacement[];
@@ -324,6 +508,7 @@ function Bay({ title, detail, blocks, dense, alert = false, idleStands = 0, offl
   queueLength: number;
   selectedJobId?: JobId;
   onSelectJob?: (jobId: JobId) => void;
+  moves: Moves;
   tipProps: TipBinder;
 }) {
   return (
@@ -336,7 +521,7 @@ function Bay({ title, detail, blocks, dense, alert = false, idleStands = 0, offl
         <span className="bay__plate" aria-hidden="true" />
         <div className="bay__blocks">
           {blocks.map((placement) => (
-            <Slab key={placement.job.id} placement={placement} dense={dense} queueLength={queueLength} selectedJobId={selectedJobId} onSelectJob={onSelectJob} tipProps={tipProps} />
+            <Slab key={placement.job.id} placement={placement} dense={dense} queueLength={queueLength} selectedJobId={selectedJobId} onSelectJob={onSelectJob} moves={moves} tipProps={tipProps} />
           ))}
           {Array.from({ length: idleStands }, (_, index) => (
             <IdleStand
@@ -372,13 +557,19 @@ function IdleStand({ berth, note, tipProps }: { berth: number; note?: string; ti
   );
 }
 
-/** One job standing on one stand: the same slab whether it is on a pad, at the gate, or in a berth. */
-function Slab({ placement, dense, queueLength, selectedJobId, onSelectJob, tipProps }: {
+/**
+ * One job standing on one stand: the same slab whether it is on a pad, at the gate, or in a
+ * berth — and, while the shift is being planned, something the player can pick up. It is a
+ * drop target as well as a drag source, so landing one job on another means "take that queue
+ * slot", which is the same move the chips and the arrow keys make.
+ */
+function Slab({ placement, dense, queueLength, selectedJobId, onSelectJob, moves, tipProps }: {
   placement: BlockPlacement;
   dense: boolean;
   queueLength: number;
   selectedJobId?: JobId;
   onSelectJob?: (jobId: JobId) => void;
+  moves: Moves;
   tipProps: TipBinder;
 }) {
   const { job, run, index, tag } = placement;
@@ -387,14 +578,17 @@ function Slab({ placement, dense, queueLength, selectedJobId, onSelectJob, tipPr
   // The stand carries the same verdict the timeline legend gives it: a job that lands
   // in its last legal slot is marked, not left looking as safe as one with slack.
   const mark = run.verdict === "missed" ? " is-late" : run.verdict === "at-risk" ? " is-risk" : "";
-  const tip = jobTip({ job, run, index, tag, queueLength, action: onSelectJob ? "Click to focus this job" : undefined });
+  const held = moves.from === index;
+  const tip = jobTip({ job, run, index, tag, queueLength, action: onSelectJob ? (moves.on ? MOVE_ACTION : "Click to focus this job") : undefined });
   return (
     <button
       type="button"
-      className={`slab slab--${job.tint}${mark}${selectedJobId === job.id ? " is-on" : ""}`}
+      className={`slab slab--${job.tint}${mark}${selectedJobId === job.id ? " is-on" : ""}${held ? " is-held" : ""}${moves.over === index && !held ? " is-over" : ""}`}
       aria-pressed={selectedJobId === job.id}
       onClick={() => onSelectJob?.(job.id)}
       style={{ "--lift": index % 2 } as CSSProperties}
+      {...moves.grip(index, job.id)}
+      {...moves.zone(index)}
       {...tipProps(tip)}
     >
       <strong className="slab__name">{job.shortLabel}</strong>
@@ -403,7 +597,7 @@ function Slab({ placement, dense, queueLength, selectedJobId, onSelectJob, tipPr
       {run.verdict !== "on-time" && <span className="slab__warn" aria-hidden="true">⚠</span>}
       {/* The same facts the popup shows, for a reader who never hovers anything. It
           replaces the old verdict-only sentence, which said less than the panel did. */}
-      <span className="sr-only">{tip.lines.join(". ")}.</span>
+      <span className="sr-only">{tip.lines.join(". ")}.{tip.action ? ` ${tip.action}.` : ""}</span>
     </button>
   );
 }

@@ -12,6 +12,14 @@ Flowline is a **deterministic operations game with a page-aware agent surface**.
 tools let an assistant read the live board, name the bottleneck, stress-test the running order
 and stage a fix; the revision only ever moves when a human clicks confirm.
 
+It is aimed at the person who owns a running order — a shift scheduler, a dispatcher, a floor lead —
+where the wrong sequence costs a missed window, a berth standing idle mid-shift, or a critical job
+finishing after its deadline. You build the order yourself, by drag or by keyboard, and the human
+review gate takes your arrangement exactly as it takes an agent's proposal: with a written reason,
+kept on the receipt. Three shifts run at two horizons with three different disruptions — a berth lost
+after the start, a berth lost while intake is still releasing work, and a critical transfer that
+clears customs three slots late.
+
 > A schedule can look efficient until the floor changes.
 
 **Play it: <https://androlay.github.io/flowline/>** — the built bundle on GitHub Pages, no account and
@@ -27,9 +35,11 @@ app labels it as such.*
 
 ## What works
 
-Everything below has been run against the current build: on a developer machine, and again against
-the hosted URL above, which serves the same five files byte for byte. No part of it depends on a
-server, an account or a network call — the page does all of it in the tab.
+Everything below has been run on a developer machine, and the loop, the tools, the guards and the
+confirmation boundary again against the hosted URL above. That site is published by hand, so it
+serves whichever `dist/` was copied to it last: after a source change it keeps serving the build
+before it until the next publish. No part of any of it depends on a server, an account or a network
+call — the page does all of it in the tab.
 
 - the whole loop — setup → planning → confirmation → disruption → recovery → exact undo;
 - a deterministic two-station simulator, exhaustive over all 24 job orders;
@@ -38,6 +48,11 @@ server, an account or a network call — the page does all of it in the tab.
 - a human confirmation boundary no tool can cross. Over one continuous 40-step session, 28 tool
   calls moved the revision zero times, while the revision itself went 2 → 6 on human clicks
   alone;
+- a board a person can move by hand: eight measured moves per viewport at 1440 × 900 and at
+  420 × 900, the stacked layout
+  — finger, arrow keys, mouse drag, both surfaces, and drops from one onto the other — each landing
+  in the same guarded transition a tool's edit takes. Every one of those moves was dispatched by a
+  scripted browser rather than by a hand on hardware;
 - an eval harness that scores the tool surface rather than a model — five tasks, eight
   solver/task rows, three of which are required to fail;
 - a 2.5D arena and an optional lazy three.js floor derived from the same evaluation, plus a
@@ -86,9 +101,9 @@ ends each one within seconds, with `build` failed and `deploy` skipped — so th
 refusal per push, none of them says anything about the workflow itself, and nothing on the live site
 was produced by it. The four commands it pins — install from the frozen lockfile, test, typecheck,
 build — were run separately on Node 22 with the pinned pnpm, against a fresh clone of this
-repository at the published commit, and they reproduce the bundle this site serves byte for byte. So
-what is unproven is the pipeline, not the build. Locally, `pnpm build && pnpm preview` gives you the
-same bundle.
+repository, and they reproduced that clone's committed bundle byte for byte on a different Node
+major. So what is unproven is the pipeline, not the build. Locally, `pnpm build && pnpm preview`
+gives you the same bundle.
 
 ## Game loop
 
@@ -122,7 +137,10 @@ proposal sits there, unconfirmed, which is the whole point.
 ## Visual layers
 
 The 2.5D DOM/CSS arena is the game. It carries the queue, both stations, the shared timeline,
-deadlines, metrics, the audit trail, the staged proposal and the human controls. The 3D floor is
+deadlines, metrics, the audit trail, the staged proposal and the human controls. A job can be
+moved from either surface it appears on — the queue rail or a stand on the floor — with a finger,
+with the arrow keys, or with a mouse drag, and a drag can cross from one to the other; every one
+of them goes through the same guarded transition an agent's edit would. The 3D floor is
 an optional explanation layer opened from the floor map: it magnifies one station, the handoff,
 the deadline and the disruption out of the same `ScheduleEvaluation`, offers four camera presets
 and five zoom steps, and walks the shift slot by slot.
